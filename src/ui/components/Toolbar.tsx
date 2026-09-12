@@ -1,14 +1,17 @@
-// 工具栏:撤销/重做/分割/删除/播放控制/缩放。快捷键在 App 层统一处理。
+// 工具栏:撤销/重做/分割/删除/播放控制/缩放/导出。快捷键在 App 层统一处理。
 
 import { canRedo, canUndo } from '../../core/history.ts';
 import { clipsAtTime } from '../../core/select.ts';
 import { uid } from '../../core/types.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
+import { useState } from 'react';
+import { ExportDialog } from './ExportDialog.tsx';
 
 export function Toolbar() {
   const doc = useProject();
   const { history, selection, playhead, playing, zoom } = useEditor();
   const selectedId = selection[0];
+  const [exporting, setExporting] = useState(false);
 
   const splitAtPlayhead = () => {
     for (const clip of clipsAtTime(doc, playhead)) {
@@ -63,12 +66,16 @@ export function Toolbar() {
         {playhead.toFixed(2)}s / {doc.clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0).toFixed(2)}s
       </span>
       <div className="toolbar-spacer" />
+      <button type="button" className="btn btn-primary" onClick={() => setExporting(true)} title="导出 WebM">
+        导出
+      </button>
       <button type="button" className="btn" onClick={() => editorStore.setZoom(zoom / 1.5)} title="缩小">
         −
       </button>
       <button type="button" className="btn" onClick={() => editorStore.setZoom(zoom * 1.5)} title="放大">
         ＋
       </button>
+      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
     </div>
   );
 }

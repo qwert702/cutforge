@@ -1,7 +1,7 @@
 {
   "name": "cutforge",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CutForge (working title) — an original, open-source, agent-first AI video editor. Community edition.",
   "license": "AGPL-3.0-or-later",
   "author": "CutForge Contributors",
@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "webm-muxer": "^5.1.4"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
