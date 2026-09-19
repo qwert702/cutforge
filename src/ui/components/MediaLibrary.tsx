@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import type { Command } from '../../core/commands.ts';
 import { findFreeStart } from '../../core/select.ts';
 import { clipEnd, uid, type MediaAsset, type ProjectDoc, type TrackKind } from '../../core/types.ts';
+import { loadDemoProject } from '../../media/demo.ts';
 import { importFiles } from '../../media/import.ts';
 import { editorStore, useProject } from '../hooks/useEditorStore.ts';
 
@@ -27,6 +28,13 @@ export function MediaLibrary() {
     }
   };
 
+  const onDemo = async () => {
+    setBusy(true);
+    const result = await loadDemoProject();
+    setBusy(false);
+    if (!result.ok && result.error) setErrors([result.error]);
+  };
+
   return (
     <div className="media-library">
       <div className="panel-title">素材</div>
@@ -40,6 +48,9 @@ export function MediaLibrary() {
       />
       <button type="button" className="btn btn-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
         {busy ? '导入中…' : '导入本地素材'}
+      </button>
+      <button type="button" className="btn" disabled={busy} onClick={() => void onDemo()} title="在浏览器里现场生成两段示例视频并铺上时间线">
+        {busy ? '生成中…' : '🎬 加载示例工程'}
       </button>
       {errors.length > 0 && (
         <div className="media-errors">
