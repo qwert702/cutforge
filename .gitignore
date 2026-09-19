@@ -9,4 +9,7 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Pro 侧私有材料(商业架构文档、授权客户端等)—— 永不入公开仓库
+/private/
 .mimosa/

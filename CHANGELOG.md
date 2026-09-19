@@ -22,6 +22,5 @@
 - 本地素材导入(视频/音频/图片,自动探测时长与分辨率)
 - AI 对话剪辑:OpenAI 兼容接口 BYO Key,8 个时间线工具,被拒自动重试
 - WebM 导出:WebCodecs(VP9 + Opus)客户端完成,含音频混音,零 GPL 依赖
-- Pro 能力门控与授权客户端骨架(`src/pro/`,见 docs/PRO-ARCHITECTURE.md)
 
 [0.1.0]: https://github.com/qwert702/cutforge/releases/tag/v0.1.0

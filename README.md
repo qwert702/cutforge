@@ -11,8 +11,7 @@
 视频",而是维护一个真正可编辑的视频工程。
 
 **[在线试用(GitHub Pages)](https://qwert702.github.io/cutforge/)** ·
-[下载源码](https://github.com/qwert702/cutforge) ·
-[Pro 商业架构](docs/PRO-ARCHITECTURE.md)
+[下载源码](https://github.com/qwert702/cutforge)
 
 <img src="assets/screenshot-demo.png" width="880" alt="CutForge 编辑器:双轨时间线 + Canvas 预览 + AI 对话剪辑" />
 
@@ -61,13 +60,9 @@ OpenAI 兼容接口的 Base URL 与 API Key(存储在浏览器本地,不经过�
 
 ## 双版本模式
 
-本项目(社区版)以 AGPL-3.0-or-later 开源。商业结构分三层:
+本仓库是**社区版**,以 AGPL-3.0-or-later 完全开源,本地剪辑能力永远免费完整可用。
+规划中的 Pro 版(高级功能扩展与云服务)将作为独立产品提供,不影响本仓库。
 
-1. **基础版**(本仓库,免费开源)—— 完整本地剪辑能力;
-2. **Pro 扩展** —— 闭源扩展包 + 授权码激活,安装进基础版后解锁本地高级功能;
-3. **云服务** —— 付费素材库、云渲染、云同步,按订阅收费,通过 API 与基础版交互。
-
-设计与边界见 [docs/PRO-ARCHITECTURE.md](docs/PRO-ARCHITECTURE.md)。
 向本仓库贡献代码前请阅读 [CLA.md](CLA.md)。
 
 ## 许可
