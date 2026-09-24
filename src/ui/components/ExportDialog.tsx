@@ -1,21 +1,24 @@
-// 导出对话框:WebM 客户端导出,带进度与取消。
+// 导出对话框:WebM / MP4 客户端导出,带进度与取消。
 
 import { useEffect, useRef, useState } from 'react';
-import { exportWebM, webCodecsAvailable, type ExportProgress } from '../../export/webm.ts';
+import { exportProject, webCodecsAvailable, type ExportFormat, type ExportProgress } from '../../export/exporter.ts';
 import { projectDuration } from '../../core/select.ts';
 import { useProject } from '../hooks/useEditorStore.ts';
 
 export function ExportDialog(props: { onClose: () => void }) {
   const doc = useProject();
+  const [format, setFormat] = useState<ExportFormat>('mp4');
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ sizeBytes: number; hasAudio: boolean } | null>(null);
+  const [done, setDone] = useState<{ sizeBytes: number; hasAudio: boolean; format: ExportFormat } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const supported = webCodecsAvailable();
   const duration = projectDuration(doc);
+  const busy = progress !== null;
+  const extension = format === 'mp4' ? 'mp4' : 'webm';
 
   const start = async () => {
     setError(null);
@@ -23,12 +26,13 @@ export function ExportDialog(props: { onClose: () => void }) {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const result = await exportWebM(doc, {
+      const result = await exportProject(doc, {
+        format,
         signal: controller.signal,
         onProgress: setProgress,
       });
-      downloadBlob(result.blob, `${doc.name || 'cutforge'}.webm`);
-      setDone({ sizeBytes: result.blob.size, hasAudio: result.hasAudio });
+      downloadBlob(result.blob, `${doc.name || 'cutforge'}.${extension}`);
+      setDone({ sizeBytes: result.blob.size, hasAudio: result.hasAudio, format });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         props.onClose();
@@ -41,17 +45,25 @@ export function ExportDialog(props: { onClose: () => void }) {
     }
   };
 
-  const busy = progress !== null;
-
   return (
     <div className="modal-backdrop" onPointerDown={(e) => !busy && e.target === e.currentTarget && props.onClose()}>
       <div className="modal">
         <div className="panel-title">
-          导出 WebM
+          导出视频
           <button type="button" className="btn btn-small" onClick={props.onClose} disabled={busy}>关闭</button>
         </div>
         <div className="export-summary">
           {doc.width}×{doc.height} · {doc.fps}fps · {duration.toFixed(2)}s · {doc.clips.length} 个片段
+        </div>
+        <div className="export-format-row">
+          <label className="export-format-option">
+            <input type="radio" name="export-format" checked={format === 'mp4'} onChange={() => setFormat('mp4')} disabled={busy} />
+            <span>MP4 <small className="export-format-hint">通用格式,适合分享(H.264)</small></span>
+          </label>
+          <label className="export-format-option">
+            <input type="radio" name="export-format" checked={format === 'webm'} onChange={() => setFormat('webm')} disabled={busy} />
+            <span>WebM <small className="export-format-hint">开放格式,体积更小(VP9)</small></span>
+          </label>
         </div>
         {!supported && (
           <div className="export-warning">此浏览器不支持 WebCodecs,请使用新版 Chrome 或 Edge。</div>
@@ -80,7 +92,7 @@ export function ExportDialog(props: { onClose: () => void }) {
             <button type="button" className="btn" onClick={() => abortRef.current?.abort()}>取消导出</button>
           ) : (
             <button type="button" className="btn btn-primary" disabled={!supported || duration <= 0} onClick={() => void start()}>
-              开始导出
+              开始导出 {extension.toUpperCase()}
             </button>
           )}
         </div>

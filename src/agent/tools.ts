@@ -24,10 +24,16 @@ export function describeProject(doc: ProjectDoc): string {
         `  - id=${a.id} "${a.name}" [${a.kind}]${a.durationSeconds !== null ? ` 时长 ${a.durationSeconds.toFixed(2)}s` : ''}`,
     ),
     `片段(${doc.clips.length}):`,
-    ...doc.clips.map(
-      (c) =>
-        `  - id=${c.id} 素材 ${c.assetId} → 轨道 ${c.trackId} 起点 ${c.start.toFixed(2)}s 时长 ${c.duration.toFixed(2)}s 源内偏移 ${c.inPoint.toFixed(2)}s`,
-    ),
+    ...doc.clips.map((c) => {
+      const extras: string[] = [];
+      if (c.speed !== undefined) extras.push(`速度 ${c.speed}x`);
+      if (c.volume !== undefined) extras.push(`音量 ${c.volume}`);
+      if (c.fadeIn || c.fadeOut) extras.push(`转场 淡入${c.fadeIn ?? 0}s/淡出${c.fadeOut ?? 0}s`);
+      const label = c.text !== undefined
+        ? `文字「${c.text.content.slice(0, 24)}」(${c.trackId})`
+        : `素材 ${c.assetId} → 轨道 ${c.trackId}`;
+      return `  - id=${c.id} ${label} 起点 ${c.start.toFixed(2)}s 时长 ${c.duration.toFixed(2)}s 源内偏移 ${c.inPoint.toFixed(2)}s${extras.length ? ` [${extras.join(', ')}]` : ''}`;
+    }),
   ];
   return lines.join('\n');
 }
@@ -218,6 +224,119 @@ export const AGENT_TOOLS: readonly AgentTool[] = [
     },
     handle: (args, { report }) => {
       runCommands([{ type: 'clip.remove', clipId: stringOr(args.clipId) }], report, '已删除片段');
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'add_text',
+        description: '添加一个文字标题片段到视频轨。',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '文字内容,可用 \\n 换行' },
+            start: { type: 'number', description: '时间线起点(秒)' },
+            duration: { type: 'number', description: '可选,时长(秒),默认 3' },
+            size: { type: 'number', description: '可选,字号 px,默认 96' },
+            color: { type: 'string', description: '可选,颜色,如 #ffffff' },
+            trackId: { type: 'string', description: '可选,目标视频轨' },
+          },
+          required: ['content', 'start'],
+        },
+      },
+    },
+    handle: (args, { doc, report }) => {
+      const commands: Command[] = [];
+      const trackId = stringOr(args.trackId) || doc.tracks.find((t) => t.kind === 'video')?.id;
+      if (!trackId) {
+        report('没有视频轨;请先调用 add_track');
+        return;
+      }
+      if (!doc.tracks.some((t) => t.id === trackId)) {
+        report(`轨道不存在:${trackId}`);
+        return;
+      }
+      commands.push({
+        type: 'clip.add',
+        clip: {
+          id: uid('clip'),
+          trackId,
+          assetId: '',
+          start: numberOr(args.start, 0),
+          duration: numberOr(args.duration, 3),
+          inPoint: 0,
+          text: {
+            content: stringOr(args.content, '标题'),
+            size: numberOr(args.size, 96),
+            color: stringOr(args.color, '#ffffff'),
+          },
+        },
+      });
+      runCommands(commands, report, '已添加文字片段');
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'set_speed',
+        description: '设置片段播放速度(0.25-4),1 为正常。',
+        parameters: {
+          type: 'object',
+          properties: { clipId: { type: 'string' }, speed: { type: 'number' } },
+          required: ['clipId', 'speed'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      runCommands([{ type: 'clip.properties', clipId: stringOr(args.clipId), speed: numberOr(args.speed, 1) }], report, '已设置速度');
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'set_volume',
+        description: '设置片段音量(0-2,1 为原始音量)。',
+        parameters: {
+          type: 'object',
+          properties: { clipId: { type: 'string' }, volume: { type: 'number' } },
+          required: ['clipId', 'volume'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      runCommands([{ type: 'clip.properties', clipId: stringOr(args.clipId), volume: numberOr(args.volume, 1) }], report, '已设置音量');
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'set_fade',
+        description: '设置片段的淡入/淡出转场(秒,0 为取消;底色黑或白)。',
+        parameters: {
+          type: 'object',
+          properties: {
+            clipId: { type: 'string' },
+            fadeIn: { type: 'number', description: '可选' },
+            fadeOut: { type: 'number', description: '可选' },
+            fadeType: { type: 'string', enum: ['black', 'white'], description: '可选,默认黑场' },
+          },
+          required: ['clipId'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      const command: Command = {
+        type: 'clip.properties',
+        clipId: stringOr(args.clipId),
+        ...(args.fadeIn !== undefined ? { fadeIn: numberOr(args.fadeIn, 0) } : {}),
+        ...(args.fadeOut !== undefined ? { fadeOut: numberOr(args.fadeOut, 0) } : {}),
+        ...(args.fadeType === 'black' || args.fadeType === 'white' ? { fadeType: args.fadeType } : {}),
+      };
+      runCommands([command], report, '已设置转场');
     },
   },
   {

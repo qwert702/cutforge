@@ -11,6 +11,7 @@ import {
   assetSupportsTrack,
   clipEnd,
   snapToFrame,
+  sourceSpan,
   type Clip,
   type ProjectDoc,
 } from './types.ts';
@@ -23,19 +24,37 @@ function round(doc: ProjectDoc, seconds: number): number {
 }
 
 function normalizeClip(doc: ProjectDoc, clip: Clip): Clip {
-  return { ...clip, start: round(doc, clip.start), duration: round(doc, clip.duration), inPoint: round(doc, clip.inPoint) };
+  return {
+    ...clip,
+    start: round(doc, clip.start),
+    duration: round(doc, clip.duration),
+    inPoint: round(doc, clip.inPoint),
+  };
 }
 
 function validateClip(doc: ProjectDoc, clip: Clip): string | null {
   if (!(clip.duration > EPSILON)) return '片段时长必须大于 0';
   if (clip.start < -EPSILON) return '片段起点不能为负';
   if (clip.inPoint < -EPSILON) return '素材内偏移不能为负';
+  if (clip.speed !== undefined && !(clip.speed >= 0.25 && clip.speed <= 4)) return '速度必须在 0.25-4 之间';
+  if (clip.volume !== undefined && !(clip.volume >= 0 && clip.volume <= 2)) return '音量必须在 0-2 之间';
+  const maxFade = clip.duration / 2;
+  if ((clip.fadeIn !== undefined && !(clip.fadeIn >= 0 && clip.fadeIn <= maxFade + EPSILON))
+    || (clip.fadeOut !== undefined && !(clip.fadeOut >= 0 && clip.fadeOut <= maxFade + EPSILON))) {
+    return '淡入/淡出时长不能超过片段时长的一半';
+  }
   const track = trackById(doc, clip.trackId);
   if (!track) return `轨道不存在:${clip.trackId}`;
+  if (clip.text !== undefined) {
+    if (track.kind !== 'video') return '文字片段只能放在视频轨';
+    if (!clip.text.content.trim()) return '文字内容不能为空';
+    if (clip.assetId !== '') return '文字片段不能引用素材';
+    return null;
+  }
   const asset = assetById(doc, clip.assetId);
   if (!asset) return `素材不存在:${clip.assetId}`;
-  if (!assetSupportsTrack(asset, track)) return `音频素材不能放到视频轨以外的轨道(${track.kind})`;
-  if (asset.durationSeconds !== null && clip.inPoint + clip.duration > asset.durationSeconds + EPSILON) {
+  if (!assetSupportsTrack(asset, track)) return `素材类型与轨道类型不兼容(${track.kind})`;
+  if (asset.durationSeconds !== null && clip.inPoint + sourceSpan(clip) > asset.durationSeconds + EPSILON) {
     return '片段超出了素材源时长';
   }
   if (hasOverlap(doc, clip.trackId, clip.start, clipEnd(clip), clip.id)) return '与同轨片段重叠';
@@ -158,6 +177,52 @@ export function applyCommand(doc: ProjectDoc, command: Command): ApplyResult {
       const start = findFreeStart(doc, clip.trackId, clip.duration, clipEnd(clip));
       const copy = normalizeClip(doc, { ...clip, id: command.newClipId, start });
       return { ok: true, doc: { ...doc, clips: [...doc.clips, copy] } };
+    }
+
+    case 'clip.updateText': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip) return { ok: false, error: '片段不存在' };
+      if (clip.text === undefined) return { ok: false, error: '只有文字片段可以编辑文字' };
+      const size = command.text.size ?? clip.text.size;
+      if (!(size >= 8 && size <= 512)) return { ok: false, error: '文字大小必须在 8-512 之间' };
+      const next: Clip = {
+        ...clip,
+        text: {
+          ...clip.text,
+          content: command.text.content ?? clip.text.content,
+          size,
+          color: command.text.color ?? clip.text.color,
+          ...(command.text.x !== undefined ? { x: command.text.x } : {}),
+          ...(command.text.y !== undefined ? { y: command.text.y } : {}),
+        },
+      };
+      const error = validateClip(doc, next);
+      if (error) return { ok: false, error };
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? next : c)) } };
+    }
+
+    case 'clip.properties': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip) return { ok: false, error: '片段不存在' };
+      if (command.speed !== undefined) {
+        if (!(command.speed >= 0.25 && command.speed <= 4)) return { ok: false, error: '速度必须在 0.25-4 之间' };
+      }
+      if (command.volume !== undefined) {
+        if (!(command.volume >= 0 && command.volume <= 2)) return { ok: false, error: '音量必须在 0-2 之间' };
+      }
+      if (command.fadeIn !== undefined && !(command.fadeIn >= 0)) return { ok: false, error: '淡入时长不能为负' };
+      if (command.fadeOut !== undefined && !(command.fadeOut >= 0)) return { ok: false, error: '淡出时长不能为负' };
+      const next: Clip = {
+        ...clip,
+        ...(command.speed !== undefined ? { speed: command.speed === 1 ? undefined : command.speed } : {}),
+        ...(command.volume !== undefined ? { volume: command.volume === 1 ? undefined : command.volume } : {}),
+        ...(command.fadeIn !== undefined ? { fadeIn: command.fadeIn === 0 ? undefined : command.fadeIn } : {}),
+        ...(command.fadeOut !== undefined ? { fadeOut: command.fadeOut === 0 ? undefined : command.fadeOut } : {}),
+        ...(command.fadeType !== undefined ? { fadeType: command.fadeType } : {}),
+      };
+      const error = validateClip(doc, next);
+      if (error) return { ok: false, error };
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? next : c)) } };
     }
   }
 }

@@ -52,6 +52,9 @@ export function MediaLibrary() {
       <button type="button" className="btn" disabled={busy} onClick={() => void onDemo()} title="在浏览器里现场生成两段示例视频并铺上时间线">
         {busy ? '生成中…' : '🎬 加载示例工程'}
       </button>
+      <button type="button" className="btn" onClick={() => addTextToTimeline(doc)} title="在播放头位置添加一个文字标题">
+        ＋ 添加文字
+      </button>
       {errors.length > 0 && (
         <div className="media-errors">
           {errors.map((e) => (
@@ -86,6 +89,33 @@ export function MediaLibrary() {
 function firstCompatibleTrack(doc: ProjectDoc, kind: MediaAsset['kind']) {
   if (kind === 'audio') return doc.tracks.find((t) => t.kind === 'audio') ?? null;
   return doc.tracks.find((t) => t.kind === 'video') ?? null;
+}
+
+/** 在播放头(或时间线末尾)添加一个 3 秒文字片段;视频轨不存在时自动创建。 */
+export function addTextToTimeline(doc: ProjectDoc, content = '点击选中后在此编辑文字'): void {
+  const commands: Command[] = [];
+  let track = doc.tracks.find((t) => t.kind === 'video');
+  if (!track) {
+    track = { id: uid('track'), kind: 'video', name: '视频 1' };
+    commands.push({ type: 'track.add', track });
+  }
+  const { playhead } = editorStore.get();
+  const timelineEnd = doc.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
+  const duration = 3;
+  const start = findFreeStart(doc, track.id, duration, Math.min(playhead, timelineEnd) || 0);
+  commands.push({
+    type: 'clip.add',
+    clip: {
+      id: uid('clip'),
+      trackId: track.id,
+      assetId: '',
+      start,
+      duration,
+      inPoint: 0,
+      text: { content, size: 96, color: '#ffffff' },
+    },
+  });
+  editorStore.dispatchAll(commands, '添加文字');
 }
 
 /** 把素材作为片段放到第一条兼容轨道的空闲位置(轨道不存在时自动创建)。 */

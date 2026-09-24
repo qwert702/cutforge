@@ -3,6 +3,7 @@ import { clipsAtTime } from '../core/select.ts';
 import { uid } from '../core/types.ts';
 import { editorStore, useEditor } from './hooks/useEditorStore.ts';
 import { ChatPanel } from './components/ChatPanel.tsx';
+import { Inspector } from './components/Inspector.tsx';
 import { MediaLibrary } from './components/MediaLibrary.tsx';
 import { Preview } from './components/Preview.tsx';
 import { Timeline } from './components/Timeline.tsx';
@@ -50,6 +51,7 @@ export function App() {
         <MediaLibrary />
         <div className="app-center">
           <Preview />
+          <Inspector />
           <Timeline />
         </div>
         <ChatPanel />

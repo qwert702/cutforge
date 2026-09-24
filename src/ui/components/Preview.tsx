@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { projectDuration } from '../../core/select.ts';
-import { clipEnd, type ProjectDoc } from '../../core/types.ts';
+import { clipEnd, sourceTimeAt, type ProjectDoc } from '../../core/types.ts';
 import {
   disposePool,
   drawTimelineFrame,
@@ -30,15 +30,14 @@ export function Preview() {
       }
     }
     for (const asset of doc.assets) {
-      if (!pool.has(asset.id)) {
-        const el = document.createElement(asset.kind === 'image' ? 'img' : asset.kind === 'video' ? 'video' : 'audio');
-        el.src = asset.url;
-        if (el instanceof HTMLVideoElement || el instanceof HTMLAudioElement) {
-          el.preload = 'auto';
-          el.muted = true;
-        }
-        pool.set(asset.id, el);
+      if (asset.kind === 'text' || pool.has(asset.id)) continue;
+      const el = document.createElement(asset.kind === 'image' ? 'img' : asset.kind === 'video' ? 'video' : 'audio');
+      el.src = asset.url;
+      if (el instanceof HTMLVideoElement || el instanceof HTMLAudioElement) {
+        el.preload = 'auto';
+        el.muted = true;
       }
+      pool.set(asset.id, el);
     }
   }, [doc.assets]);
 
@@ -90,7 +89,13 @@ function syncMedia(doc: ProjectDoc, pool: MediaPool, time: number, playing: bool
     if (!(el instanceof HTMLVideoElement) && !(el instanceof HTMLAudioElement)) continue;
     const media = el as HTMLVideoElement | HTMLAudioElement;
     const active = time >= clip.start && time < clipEnd(clip);
-    const target = clip.inPoint + (time - clip.start);
+    const target = sourceTimeAt(clip, time);
+    const speed = clip.speed ?? 1;
+    if (media.playbackRate !== speed) {
+      try { media.playbackRate = speed; } catch { /* 个别浏览器对极端值抛错 */ }
+    }
+    const volume = Math.min(1, Math.max(0, clip.volume ?? 1));
+    if (media.volume !== volume) media.volume = volume;
     if (!active || !playing) {
       media.pause();
       if (active && Math.abs(media.currentTime - target) > 0.05) media.currentTime = Math.max(0, target);

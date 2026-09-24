@@ -38,12 +38,23 @@ npm run build
 要求 Node.js 20+(建议 24)。AI 功能在应用内"设置"里填入任一
 OpenAI 兼容接口的 Base URL 与 API Key(存储在浏览器本地,不经过任何第三方)。
 
+桌面版(Electron):
+
+```bash
+npm run build
+npm run electron:dev        # 加载 dist
+# 开发热重载:先 npm run dev,再 CF_DEV_URL=http://localhost:5300 npx electron .
+npm run desktop:dist        # 打包 Windows NSIS 安装包(release/)
+```
+
 ## 功能
 
-- 🎞️ **多轨时间线**:视频/音频/图片,拖拽、裁剪、分割、跨轨、多选
+- 🎞️ **多轨时间线**:视频/音频/图片/文字,拖拽、裁剪、分割、跨轨、多选
+- ✍️ **文字标题与转场**:片段级淡入淡出(黑场/白场)、变速 0.25–4x、音量控制
 - ↩️ **完整撤销栈**:不可变工程文档 + 命令层,手工与 AI 共用同一套命令
-- 🤖 **AI 对话剪辑**:Agent 通过 8 个时间线工具真实剪辑,操作被拒会阅读错误自动重试
-- 📦 **浏览器内导出**:WebCodecs(VP9 + Opus)客户端完成,素材不出本机
+- 🤖 **AI 对话剪辑**:12 个时间线工具真实剪辑,操作被拒会阅读错误自动重试
+- 📦 **浏览器内导出**:MP4(H.264)与 WebM(VP9)由 WebCodecs 客户端完成,素材不出本机
+- 🖥️ **桌面应用**:Electron 壳,Windows 安装包一键打包
 - 🔒 **隐私优先**:无遥测、无上报;素材与 API Key 全部留在本地
 
 ## 路线图
@@ -53,9 +64,9 @@ OpenAI 兼容接口的 Base URL 与 API Key(存储在浏览器本地,不经过�
 - [x] Agent 对话剪辑(工具调用与手工编辑共用同一套命令层)
 - [x] WebM 导出(WebCodecs,客户端完成)
 - [x] 在线版与示例工程(无需安装即可体验)
-- [ ] MP4 导出(WebCodecs H.264,客户端完成)
-- [ ] 文本/标题、基础转场、变速与音量包络
-- [ ] Electron 桌面壳(Windows)
+- [x] MP4 导出(WebCodecs H.264,客户端完成)
+- [x] 文字/标题、淡入淡出转场、变速与音量
+- [x] Electron 桌面壳(Windows)
 - [ ] 本地语音识别字幕、关键帧动画
 - [ ] Agent 提案/批准模式(改动先预览再应用)
 - [ ] 云端增值服务(独立闭源服务,另行发布)

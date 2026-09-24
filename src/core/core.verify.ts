@@ -35,12 +35,13 @@ function expectError<T extends { ok: boolean }>(result: T): void {
 
 function clip(partial: Partial<Clip> & { assetId?: string }): Clip {
   return {
-    id: partial.id ?? uid('clip'),
-    trackId: partial.trackId ?? 'track_v1',
-    assetId: partial.assetId ?? 'asset_a',
-    start: partial.start ?? 0,
-    duration: partial.duration ?? 2,
-    inPoint: partial.inPoint ?? 0,
+    id: uid('clip'),
+    trackId: 'track_v1',
+    assetId: 'asset_a',
+    start: 0,
+    duration: 2,
+    inPoint: 0,
+    ...partial,
   };
 }
 
@@ -194,5 +195,89 @@ describe('时间取整', () => {
     let doc = makeDoc();
     doc = expectOk(applyCommand(doc, addClip(clip({ start: 0.1 + 0.2, duration: 1 }))));
     assert.equal(doc.clips[0].start, 0.3);
+  });
+});
+
+describe('文字片段', () => {
+  const textClip = (partial: Partial<Clip> = {}): Clip => ({
+    id: uid('clip'),
+    trackId: 'track_v1',
+    assetId: '',
+    start: 0,
+    duration: 2,
+    inPoint: 0,
+    ...partial,
+    text: partial.text ?? { content: '你好世界', size: 72, color: '#ffffff' },
+  });
+
+  it('文字片段可以上视频轨,无需素材', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(textClip())));
+    assert.equal(doc.clips[0].text?.content, '你好世界');
+  });
+
+  it('文字片段不能上音频轨、不能引用素材、内容不能为空', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, { type: 'track.add', track: { id: 'track_a1', kind: 'audio', name: '音频 1' } }));
+    expectError(applyCommand(doc, addClip(textClip({ trackId: 'track_a1' }))));
+    expectError(applyCommand(doc, addClip(textClip({ assetId: 'asset_a' }))));
+    expectError(applyCommand(doc, addClip(textClip({ text: { content: '  ', size: 72, color: '#fff' } }))));
+  });
+
+  it('updateText 改内容与样式,媒体片段被拒绝', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(textClip({ id: 't1' }))));
+    doc = expectOk(applyCommand(doc, {
+      type: 'clip.updateText', clipId: 't1', text: { content: '新标题', size: 96, color: '#ff0000' },
+    }));
+    assert.deepEqual([doc.clips[0].text?.content, doc.clips[0].text?.size], ['新标题', 96]);
+    // 媒体片段
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 3 }))));
+    expectError(applyCommand(doc, { type: 'clip.updateText', clipId: doc.clips[1].id, text: { content: 'x' } }));
+  });
+});
+
+describe('变速', () => {
+  it('speed 影响源时长校验:2 倍速 2 秒需要 4 秒源', () => {
+    const doc = makeDoc();
+    expectError(applyCommand(doc, addClip(clip({ duration: 2, inPoint: 7, speed: 2 })))); // 7+4 > 10
+    expectOk(applyCommand(doc, addClip(clip({ duration: 2, inPoint: 6, speed: 2 })))); // 6+4 = 10
+  });
+
+  it('speed 越界被拒绝,clip.properties 可设置并回读', () => {
+    let doc = makeDoc();
+    expectError(applyCommand(doc, addClip(clip({ speed: 8 }))));
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 0, duration: 2 }))));
+    doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: doc.clips[0].id, speed: 0.5 }));
+    assert.equal(doc.clips[0].speed, 0.5);
+  });
+});
+
+describe('音量与淡入淡出', () => {
+  it('音量 0-2 合法,越界拒绝', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({}))));
+    doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: doc.clips[0].id, volume: 0 }));
+    assert.equal(doc.clips[0].volume, 0);
+    doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: doc.clips[0].id, volume: 2 }));
+    assert.equal(doc.clips[0].volume, 2);
+    expectError(applyCommand(doc, { type: 'clip.properties', clipId: doc.clips[0].id, volume: 3 }));
+  });
+
+  it('淡入淡出不能超过时长一半', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ duration: 4 }))));
+    const id = doc.clips[0].id;
+    expectError(applyCommand(doc, { type: 'clip.properties', clipId: id, fadeIn: 2.5 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: id, fadeIn: 1, fadeOut: 1, fadeType: 'white' }));
+    assert.deepEqual([doc.clips[0].fadeIn, doc.clips[0].fadeOut, doc.clips[0].fadeType], [1, 1, 'white']);
+  });
+
+  it('trim 缩短时长后超限的淡出会被拒绝', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ duration: 4 }))));
+    const id = doc.clips[0].id;
+    doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: id, fadeIn: 2 }));
+    expectError(applyCommand(doc, { type: 'clip.trim', clipId: id, duration: 3 })); // 2 > 3/2
   });
 });

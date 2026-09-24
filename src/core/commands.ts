@@ -2,7 +2,7 @@
 // 命令携带显式 id(而不是在 reducer 内部生成),保证同一命令重放得到
 // 同一结果 —— 这是 Agent 提案/批准模式与撤销栈能共用一套命令的前提。
 
-import type { Clip, MediaAsset, ProjectDoc, Track } from './types.ts';
+import type { Clip, MediaAsset, ProjectDoc, TextSpec, Track } from './types.ts';
 
 export type Command =
   | { readonly type: 'project.rename'; readonly name: string }
@@ -21,7 +21,18 @@ export type Command =
     }
   | { readonly type: 'clip.split'; readonly clipId: string; readonly at: number; readonly newClipId: string }
   | { readonly type: 'clip.remove'; readonly clipId: string }
-  | { readonly type: 'clip.duplicate'; readonly clipId: string; readonly newClipId: string };
+  | { readonly type: 'clip.duplicate'; readonly clipId: string; readonly newClipId: string }
+  | { readonly type: 'clip.updateText'; readonly clipId: string; readonly text: Partial<TextSpec> }
+  | {
+      readonly type: 'clip.properties';
+      readonly clipId: string;
+      /** 局部更新:仅提供的字段会被修改(undefined 值删除可选字段) */
+      readonly speed?: number;
+      readonly volume?: number;
+      readonly fadeIn?: number;
+      readonly fadeOut?: number;
+      readonly fadeType?: 'black' | 'white';
+    };
 
 export type ApplyResult =
   | { readonly ok: true; readonly doc: ProjectDoc }
@@ -39,4 +50,6 @@ export const COMMAND_LABELS: Record<Command['type'], string> = {
   'clip.split': '分割片段',
   'clip.remove': '删除片段',
   'clip.duplicate': '复制片段',
+  'clip.updateText': '编辑文字',
+  'clip.properties': '调整片段属性',
 };

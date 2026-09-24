@@ -181,18 +181,21 @@ function ClipBlock(props: {
 }) {
   const { doc, clip, selected, dragging, zoom, onDragStart } = props;
   const asset = doc.assets.find((a) => a.id === clip.assetId);
+  const kindClass = clip.text !== undefined ? 'clip-text' : `clip-${asset?.kind ?? 'video'}`;
+  const label = clip.text !== undefined ? `字 ${clip.text.content.split('\n')[0]}` : asset?.name ?? clip.assetId;
   return (
     <div
-      className={`clip ${selected ? 'clip-selected' : ''} ${dragging ? 'clip-dragging' : ''} clip-${asset?.kind ?? 'video'}`}
+      className={`clip ${selected ? 'clip-selected' : ''} ${dragging ? 'clip-dragging' : ''} ${kindClass}`}
       style={{ left: clip.start * zoom, width: Math.max(8, clip.duration * zoom) }}
       onPointerDown={(e) => onDragStart('move', e, clip)}
-      title={`${asset?.name ?? clip.assetId} · ${clip.duration.toFixed(2)}s`}
+      title={`${clip.text !== undefined ? clip.text.content : asset?.name ?? clip.assetId} · ${clip.duration.toFixed(2)}s`}
     >
       <span
         className="clip-handle clip-handle-left"
         onPointerDown={(e) => onDragStart('trim-start', e, clip)}
       />
-      <span className="clip-name">{asset?.name ?? clip.assetId}</span>
+      <span className="clip-name">{label}</span>
+      {(clip.fadeIn || clip.fadeOut) && <span className="clip-fade-badge">◐</span>}
       <span
         className="clip-handle clip-handle-right"
         onPointerDown={(e) => onDragStart('trim-end', e, clip)}
