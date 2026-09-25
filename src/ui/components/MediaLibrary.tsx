@@ -10,6 +10,7 @@ import { editorStore, useProject } from '../hooks/useEditorStore.ts';
 import { TemplatePicker } from './TemplatePicker.tsx';
 import { VoiceoverModal } from './VoiceoverModal.tsx';
 import { BeatSyncModal } from './BeatSyncModal.tsx';
+import { SubtitleModal } from './SubtitleModal.tsx';
 
 export function MediaLibrary() {
   const doc = useProject();
@@ -19,6 +20,7 @@ export function MediaLibrary() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showVoiceover, setShowVoiceover] = useState(false);
   const [showBeatSync, setShowBeatSync] = useState(false);
+  const [showSubtitles, setShowSubtitles] = useState(false);
 
   const onPick = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -55,6 +57,9 @@ export function MediaLibrary() {
       <button type="button" className="btn btn-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
         {busy ? '导入中…' : '导入本地素材'}
       </button>
+      <button type="button" className="btn" onClick={() => setShowSubtitles(true)} title="本地语音识别,自动生成字幕轨">
+        💬 字幕识别
+      </button>
       <button type="button" className="btn" onClick={() => setShowBeatSync(true)} title="分析音乐节拍,自动按拍切分素材">
         🎵 音乐卡点
       </button>
@@ -73,6 +78,7 @@ export function MediaLibrary() {
       {showTemplates && <TemplatePicker onClose={() => setShowTemplates(false)} />}
       {showVoiceover && <VoiceoverModal onClose={() => setShowVoiceover(false)} />}
       {showBeatSync && <BeatSyncModal onClose={() => setShowBeatSync(false)} />}
+      {showSubtitles && <SubtitleModal onClose={() => setShowSubtitles(false)} />}
       {errors.length > 0 && (
         <div className="media-errors">
           {errors.map((e) => (

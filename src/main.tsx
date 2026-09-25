@@ -12,11 +12,12 @@ createRoot(document.getElementById('root')!).render(
 // 仅开发环境的端到端测试桥(生产构建被 import.meta.env.DEV 剔除)
 if (import.meta.env.DEV) {
   void (async () => {
-    const [{ editorStore }, { executeTool }, { loadDemoProject }] = await Promise.all([
+    const [{ editorStore }, { executeTool }, { loadDemoProject }, { importFiles }] = await Promise.all([
       import('./ui/hooks/useEditorStore.ts'),
       import('./agent/tools.ts'),
       import('./media/demo.ts'),
+      import('./media/import.ts'),
     ]);
-    (window as unknown as Record<string, unknown>).__cf = { editorStore, executeTool, loadDemoProject };
+    (window as unknown as Record<string, unknown>).__cf = { editorStore, executeTool, loadDemoProject, importFiles };
   })();
 }
