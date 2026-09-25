@@ -1,7 +1,9 @@
-// 示例工程:在浏览器里用 canvas 动画 + MediaRecorder 现场合成两段素材,
+// 示例工程:用 WebCodecs 逐帧编码现场合成两段示例视频,
 // 让首次访问者不导入任何文件就能体验时间线与 AI 剪辑。
-// 生成的素材只存在于当前会话(blob: URL),不落盘。
+// 不依赖 rAF / MediaRecorder / 页面可见性 —— 后台标签页同样可用。
+// 生成的素材只存在于当前会话(blob: URL),随后被工程库持久化。
 
+import { ArrayBufferTarget, Muxer } from 'webm-muxer';
 import { applyCommand } from '../core/reducer.ts';
 import { findFreeStart } from '../core/select.ts';
 import { uid, type MediaAsset, type ProjectDoc } from '../core/types.ts';
@@ -68,65 +70,88 @@ const DEMO_SPECS: readonly GeneratedClipSpec[] = [
 const DEMO_WIDTH = 960;
 const DEMO_HEIGHT = 540;
 const DEMO_FPS = 30;
-const MIME_CANDIDATES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
 
-function pickMime(): string | null {
-  if (typeof MediaRecorder === 'undefined') return null;
-  return MIME_CANDIDATES.find((mime) => MediaRecorder.isTypeSupported(mime)) ?? null;
+function webCodecsAvailable(): boolean {
+  return typeof window !== 'undefined' && 'VideoEncoder' in window && 'VideoFrame' in window;
 }
 
-/** 录制一段 canvas 动画为 WebM 素材。 */
-async function recordClip(spec: GeneratedClipSpec): Promise<MediaAsset> {
+/** 用 WebCodecs 把 canvas 动画逐帧编码为 WebM(WebM 无音频轨)。 */
+async function renderClip(spec: GeneratedClipSpec): Promise<MediaAsset> {
+  if (!webCodecsAvailable()) throw new Error('此浏览器不支持 WebCodecs,无法生成示例(请用新版 Chrome/Edge)');
+
   const canvas = document.createElement('canvas');
   canvas.width = DEMO_WIDTH;
   canvas.height = DEMO_HEIGHT;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('无法创建示例画布');
 
-  const stream = canvas.captureStream(DEMO_FPS);
-  const mime = pickMime();
-  if (!mime) throw new Error('此浏览器不支持 MediaRecorder,无法生成示例');
-  const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
-  const stopped = new Promise<void>((resolve) => {
-    recorder.onstop = () => resolve();
-  });
-  recorder.start(200);
+  // VP9 优先,老浏览器回退 VP8
+  let codec: string | null = null;
+  for (const candidate of ['vp09.00.10.08', 'vp8']) {
+    const support = await VideoEncoder.isConfigSupported({
+      codec: candidate, width: DEMO_WIDTH, height: DEMO_HEIGHT, bitrate: 2_500_000, framerate: DEMO_FPS,
+    });
+    if (support.supported) {
+      codec = candidate;
+      break;
+    }
+  }
+  if (!codec) throw new Error('浏览器不支持 VP9/VP8 编码,无法生成示例');
 
-  const startAt = performance.now();
-  await new Promise<void>((resolve, reject) => {
-    // 后台标签页的 rAF 会被冻结:超时给出可读错误而不是静默挂死
-    const watchdog = setTimeout(
-      () => reject(new Error('页面处于后台,示例生成被暂停;请保持页面在前台重试')),
-      (spec.seconds + 5) * 1000,
-    );
-    const step = () => {
-      const elapsed = (performance.now() - startAt) / 1000;
-      if (elapsed >= spec.seconds) {
-        clearTimeout(watchdog);
-        resolve();
-        return;
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target,
+    video: { codec: 'V_VP9', width: DEMO_WIDTH, height: DEMO_HEIGHT, frameRate: DEMO_FPS },
+  });
+
+  let encodeError: Error | null = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (error) => {
+      encodeError = error instanceof Error ? error : new Error(String(error));
+    },
+  });
+  encoder.configure({ codec, width: DEMO_WIDTH, height: DEMO_HEIGHT, bitrate: 2_500_000, framerate: DEMO_FPS });
+
+  const totalFrames = spec.seconds * DEMO_FPS;
+  try {
+    for (let frame = 0; frame < totalFrames; frame += 1) {
+      if (encodeError) throw encodeError;
+      spec.draw(ctx, frame / DEMO_FPS, DEMO_WIDTH, DEMO_HEIGHT);
+      const videoFrame = new VideoFrame(canvas, {
+        timestamp: Math.round((frame * 1e6) / DEMO_FPS),
+        duration: Math.round(1e6 / DEMO_FPS),
+      });
+      encoder.encode(videoFrame, { keyFrame: frame % (DEMO_FPS * 2) === 0 });
+      videoFrame.close();
+      if (encoder.encodeQueueSize > 8) {
+        // 用 dequeue 事件排空:后台标签页 setTimeout 被节流,不能用定时器等待
+        await new Promise<void>((resolve) => {
+          const onDequeue = () => {
+            if (encoder.encodeQueueSize <= 4) {
+              encoder.removeEventListener('dequeue', onDequeue);
+              resolve();
+            }
+          };
+          encoder.addEventListener('dequeue', onDequeue);
+          onDequeue();
+        });
       }
-      spec.draw(ctx, elapsed, DEMO_WIDTH, DEMO_HEIGHT);
-      requestAnimationFrame(step);
-    };
-    step();
-  });
-  recorder.stop();
-  await stopped;
+    }
+    await encoder.flush();
+  } finally {
+    encoder.close();
+  }
+  muxer.finalize();
 
-  const blob = new Blob(chunks, { type: 'video/webm' });
+  const blob = new Blob([target.buffer], { type: 'video/webm' });
   const url = URL.createObjectURL(blob);
-  const duration = await probeDuration(url);
   const asset: MediaAsset = {
     id: uid('asset'),
     name: spec.name,
     kind: 'video',
     url,
-    durationSeconds: duration,
+    durationSeconds: spec.seconds,
     width: DEMO_WIDTH,
     height: DEMO_HEIGHT,
   };
@@ -134,22 +159,12 @@ async function recordClip(spec: GeneratedClipSpec): Promise<MediaAsset> {
   return asset;
 }
 
-function probeDuration(url: string): Promise<number> {
-  return new Promise((resolve) => {
-    const el = document.createElement('video');
-    el.preload = 'metadata';
-    el.onloadedmetadata = () => resolve(Number.isFinite(el.duration) ? el.duration : 4);
-    el.onerror = () => resolve(4);
-    el.src = url;
-  });
-}
-
 /** 生成示例素材并铺成两轨时间线;整批一个撤销点。 */
 export async function loadDemoProject(): Promise<{ ok: boolean; error?: string }> {
   try {
     const assets: MediaAsset[] = [];
     for (const spec of DEMO_SPECS) {
-      assets.push(await recordClip(spec));
+      assets.push(await renderClip(spec));
     }
     let doc: ProjectDoc = editorStore.get().history.present;
     const trackA = { id: uid('track'), kind: 'video' as const, name: '视频 1' };

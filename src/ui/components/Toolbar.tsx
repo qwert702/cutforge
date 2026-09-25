@@ -10,7 +10,7 @@ import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 import { ExportDialog } from './ExportDialog.tsx';
 import { OpenProjectDialog } from './OpenProjectDialog.tsx';
 
-export function Toolbar() {
+export function Toolbar(props: { onShowHelp: () => void }) {
   const doc = useProject();
   const { history, selection, playhead, playing, zoom } = useEditor();
   const selectedId = selection[0];
@@ -150,6 +150,9 @@ export function Toolbar() {
       </button>
       <button type="button" className="btn" onClick={fitZoom} title="缩放适配工程时长">
         适配
+      </button>
+      <button type="button" className="btn" onClick={props.onShowHelp} title="引导与快捷键 (?)">
+        ?
       </button>
       <button type="button" className="btn" onClick={() => editorStore.setZoom(zoom / 1.5)} title="缩小">
         −

@@ -211,9 +211,16 @@ function waitReady(el: HTMLVideoElement): Promise<void> {
 }
 
 function drainQueue(encoder: VideoEncoder): Promise<void> {
+  // 用 dequeue 事件排空:后台标签页 setTimeout 被节流,不能用定时器等待
   return new Promise((resolve) => {
-    const check = () => (encoder.encodeQueueSize <= 4 ? resolve() : setTimeout(check, 8));
-    check();
+    const onDequeue = () => {
+      if (encoder.encodeQueueSize <= 4) {
+        encoder.removeEventListener('dequeue', onDequeue);
+        resolve();
+      }
+    };
+    encoder.addEventListener('dequeue', onDequeue);
+    onDequeue();
   });
 }
 

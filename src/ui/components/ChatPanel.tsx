@@ -117,9 +117,26 @@ export function ChatPanel() {
       <div className="chat-list" ref={listRef}>
         {entries.length === 0 && (
           <div className="chat-hint">
-            试试:「把素材 a 加到时间线开头」「在 3 秒处分割第一个片段」。
-            <br />
-            Agent 与手工编辑共用同一套命令,所有修改都可以 Ctrl+Z 撤销。
+            {config ? (
+              <>
+                试试:「把素材 a 加到时间线开头」「在 3 秒处分割第一个片段」
+                「给第一个片段加 1 秒淡入」。
+                <br />
+                Agent 与手工编辑共用同一套命令,所有修改都可以 Ctrl+Z 撤销。
+              </>
+            ) : (
+              <>
+                <b>三步开始 AI 剪辑:</b>
+                <br />
+                ① 点上方「设置」,选一个 AI 服务(推荐智谱,有免费额度)并填入 API Key;
+                <br />
+                ② 点左侧「🎬 加载示例工程」生成素材;
+                <br />
+                ③ 直接说「把示例铺到时间线,加一个标题,每个片段加淡入淡出」。
+                <br />
+                <span className="chat-hint-dim">没有 Key 也完全可以用:手动剪辑 + 导出全部功能不受影响。</span>
+              </>
+            )}
           </div>
         )}
         {entries.map((entry, i) => (
@@ -148,31 +165,56 @@ export function ChatPanel() {
   );
 }
 
+/** 常用服务商预设:点击即填好接口与模型,用户只需填 Key。 */
+const LLM_PRESETS: readonly { label: string; baseUrl: string; model: string; hint?: string }[] = [
+  { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', hint: '有免费额度' },
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+  { label: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+  { label: '通义 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini' },
+];
+
 function SettingsForm(props: { initial: LlmConfig | null; onSave: (config: LlmConfig) => void }) {
-  const [baseUrl, setBaseUrl] = useState(props.initial?.baseUrl ?? 'https://api.openai.com/v1');
+  const [baseUrl, setBaseUrl] = useState(props.initial?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4');
   const [apiKey, setApiKey] = useState(props.initial?.apiKey ?? '');
-  const [model, setModel] = useState(props.initial?.model ?? 'gpt-5-mini');
+  const [model, setModel] = useState(props.initial?.model ?? 'glm-4-flash');
   return (
     <div className="chat-settings">
+      <div className="chat-settings-presets">
+        {LLM_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            className="btn btn-small"
+            title={preset.hint ?? preset.baseUrl}
+            onClick={() => {
+              setBaseUrl(preset.baseUrl);
+              setModel(preset.model);
+            }}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
       <label>
         接口地址 (OpenAI 兼容)
-        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" />
+        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
       </label>
       <label>
         API Key
-        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="在服务商控制台创建" />
       </label>
       <label>
         模型
         <input value={model} onChange={(e) => setModel(e.target.value)} />
       </label>
-      <div className="chat-settings-hint">配置只保存在本机浏览器,请求直接发给你填写的接口。</div>
+      <div className="chat-settings-hint">Key 只保存在本机浏览器,请求直接发给你选择的服务商,不经过任何第三方。</div>
       <button
         type="button"
         className="btn btn-primary"
         onClick={() => baseUrl.trim() && apiKey.trim() && model.trim() && props.onSave({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim() })}
       >
-        保存
+        保存并开始使用
       </button>
     </div>
   );

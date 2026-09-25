@@ -317,3 +317,44 @@ body { background: var(--bg); color: var(--text); }
   background: var(--bg-raised); border: 2px dashed var(--accent); border-radius: 12px;
   padding: 28px 44px; font-size: 15px; color: var(--text);
 }
+
+/* ── 首次启动引导 ────────────────────────── */
+.onboarding-backdrop { background: rgba(8, 10, 14, 0.78); }
+.onboarding {
+  width: 560px; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); overflow-y: auto;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px;
+  padding: 22px; display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.6);
+}
+.onboarding-head { display: flex; align-items: center; gap: 12px; }
+.onboarding-title { font-size: 17px; font-weight: 700; }
+.onboarding-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.onboarding-steps { display: flex; flex-direction: column; gap: 10px; }
+.onboarding-step { display: flex; gap: 12px; align-items: flex-start; }
+.onboarding-num {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; margin-top: 1px;
+}
+.onboarding-step-title { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+.onboarding-step-desc { font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+.onboarding-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.onboarding-cta { flex: 1; min-width: 200px; padding: 9px 12px; font-size: 13.5px; }
+.onboarding-shortcuts {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 10px;
+  border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim);
+}
+.onboarding-shortcuts kbd {
+  background: var(--bg-hover); border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 4px; padding: 1px 5px; font-family: inherit; font-size: 11px; color: var(--text);
+}
+.onboarding-foot { display: flex; align-items: center; gap: 12px; }
+.onboarding-hint { font-size: 11px; color: var(--text-dim); }
+
+/* ── AI 设置预设 / 空状态 ─────────────────── */
+.chat-settings-presets { display: flex; flex-wrap: wrap; gap: 5px; }
+.chat-hint-dim { color: var(--text-dim); font-size: 11.5px; }
+.track-lane-empty {
+  display: flex; align-items: center; gap: 8px; padding: 0 12px;
+}
+.track-empty-hint { font-size: 11px; color: var(--text-dim); }

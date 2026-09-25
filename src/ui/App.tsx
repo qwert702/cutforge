@@ -10,10 +10,12 @@ import { Preview } from './components/Preview.tsx';
 import { Timeline } from './components/Timeline.tsx';
 import { Toolbar } from './components/Toolbar.tsx';
 import { importFiles } from '../media/import.ts';
+import { isOnboardingSeen, Onboarding } from './components/Onboarding.tsx';
 
 export function App() {
   const { message, playing } = useEditor();
   const [dragOver, setDragOver] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingSeen());
 
   // 自动保存 + 启动恢复
   useEffect(() => initAutosave(), []);
@@ -101,7 +103,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Toolbar />
+      <Toolbar onShowHelp={() => setShowOnboarding(true)} />
       <div className="app-main">
         <MediaLibrary />
         <div className="app-center">
@@ -111,6 +113,7 @@ export function App() {
         </div>
         <ChatPanel />
       </div>
+      {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
       {message && (
         <div className="toast" role="alert" onClick={() => editorStore.clearMessage()}>
           {message}

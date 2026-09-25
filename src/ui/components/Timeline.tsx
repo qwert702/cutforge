@@ -12,6 +12,8 @@ import { clipEnd, snapToFrame, uid, type Clip, type ProjectDoc, type TrackKind }
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 import { ContextMenu, type MenuItem } from './ContextMenu.tsx';
 import { ClipThumbs, ClipWaveform } from './ClipVisuals.tsx';
+import { loadDemoProject } from '../../media/demo.ts';
+import { addTextToTimeline } from './MediaLibrary.tsx';
 
 const TRACK_HEIGHT = 56;
 const SNAP_PX = 8;
@@ -37,6 +39,7 @@ export function Timeline() {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [renamingTrack, setRenamingTrack] = useState<string | null>(null);
+  const [emptyBusy, setEmptyBusy] = useState(false);
   const rulerInnerRef = useRef<HTMLDivElement>(null);
 
   const duration = Math.max(10, doc.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0) + 10);
@@ -275,7 +278,32 @@ export function Timeline() {
                 ))}
             </div>
           ))}
-          {doc.tracks.length === 0 && <div className="track-lane track-lane-empty" style={{ height: TRACK_HEIGHT }} />}
+          {doc.tracks.length === 0 && (
+            <div className="track-lane track-lane-empty" style={{ height: TRACK_HEIGHT }}>
+              <button
+                type="button"
+                className="btn btn-small btn-primary"
+                disabled={emptyBusy}
+                onClick={async () => {
+                  setEmptyBusy(true);
+                  const result = await loadDemoProject();
+                  setEmptyBusy(false);
+                  if (!result.ok && result.error) editorStore.notify(result.error);
+                }}
+                title="现场生成两段示例视频并铺上时间线"
+              >
+                🎬 一分钟体验示例
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => addTextToTimeline(doc)}
+              >
+                ＋ 添加文字
+              </button>
+              <span className="track-empty-hint">或从左侧导入素材 / 把文件拖进窗口</span>
+            </div>
+          )}
           {drag?.snapAt != null && (
             <div className="snap-guide" style={{ left: drag.snapAt * zoom }} />
           )}
