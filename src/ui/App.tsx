@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { clipsAtTime } from '../core/select.ts';
 import { uid } from '../core/types.ts';
+import { initAutosave } from '../persist/autosave.ts';
 import { editorStore, useEditor } from './hooks/useEditorStore.ts';
 import { ChatPanel } from './components/ChatPanel.tsx';
 import { Inspector } from './components/Inspector.tsx';
@@ -8,9 +9,63 @@ import { MediaLibrary } from './components/MediaLibrary.tsx';
 import { Preview } from './components/Preview.tsx';
 import { Timeline } from './components/Timeline.tsx';
 import { Toolbar } from './components/Toolbar.tsx';
+import { importFiles } from '../media/import.ts';
 
 export function App() {
   const { message, playing } = useEditor();
+  const [dragOver, setDragOver] = useState(false);
+
+  // 自动保存 + 启动恢复
+  useEffect(() => initAutosave(), []);
+
+  // Toast 自动消失
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => editorStore.clearMessage(), 3000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  // 拖拽导入
+  useEffect(() => {
+    const onOver = (event: DragEvent) => {
+      if ([...(event.dataTransfer?.types ?? [])].includes('Files')) {
+        event.preventDefault();
+        setDragOver(true);
+      }
+    };
+    const onLeave = (event: DragEvent) => {
+      if (event.relatedTarget === null) setDragOver(false);
+    };
+    const onDrop = (event: DragEvent) => {
+      event.preventDefault();
+      setDragOver(false);
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length === 0) return;
+      void importFiles(files).then(({ assets, errors }) => {
+        if (assets.length > 0) {
+          editorStore.dispatchAll(
+            assets.map((asset) => ({ type: 'asset.add', asset }) as const),
+            `拖入素材`,
+          );
+        }
+        editorStore.notify(
+          errors.length > 0
+            ? `已导入 ${assets.length} 个,${errors.length} 个失败`
+            : assets.length > 0
+              ? `已导入 ${assets.length} 个素材`
+              : '没有可识别的文件',
+        );
+      });
+    };
+    window.addEventListener('dragover', onOver);
+    window.addEventListener('dragleave', onLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onOver);
+      window.removeEventListener('dragleave', onLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, []);
 
   // 全局快捷键
   useEffect(() => {
@@ -59,6 +114,11 @@ export function App() {
       {message && (
         <div className="toast" role="alert" onClick={() => editorStore.clearMessage()}>
           {message}
+        </div>
+      )}
+      {dragOver && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-card">松开导入素材(视频 / 音频 / 图片)</div>
         </div>
       )}
     </div>

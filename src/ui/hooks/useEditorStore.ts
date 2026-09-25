@@ -13,7 +13,8 @@ import {
   type EditorHistory,
 } from '../../core/history.ts';
 import { projectDuration } from '../../core/select.ts';
-import { emptyProject, type ProjectDoc } from '../../core/types.ts';
+import { emptyProject, uid, type ProjectDoc } from '../../core/types.ts';
+import { replaceMediaBlobs } from '../../persist/mediaRegistry.ts';
 
 export interface EditorState {
   readonly history: EditorHistory;
@@ -33,6 +34,8 @@ let state: EditorState = {
   message: null,
 };
 
+let currentProjectId = uid('proj');
+
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((fn) => fn());
 function setState(patch: Partial<EditorState>): void {
@@ -47,6 +50,22 @@ export const editorStore = {
   },
   get(): EditorState {
     return state;
+  },
+  projectId(): string {
+    return currentProjectId;
+  },
+
+  /** 新建工程:整体替换状态,清空素材注册表(调用方负责先持久化旧工程)。 */
+  newProject(name = '未命名工程'): void {
+    currentProjectId = uid('proj');
+    replaceMediaBlobs(new Map());
+    setState({ history: initHistory(emptyProject(name)), selection: [], playhead: 0, playing: false, message: null });
+  },
+
+  /** 打开工程:整体替换状态(blob 已由调用方重建并注册)。 */
+  loadProjectRecord(id: string, doc: ProjectDoc): void {
+    currentProjectId = id;
+    setState({ history: initHistory(doc), selection: [], playhead: 0, playing: false, message: null });
   },
 
   dispatch(command: Command, label: string): { ok: boolean; error?: string } {
@@ -108,6 +127,11 @@ export const editorStore = {
   },
   clearMessage(): void {
     setState({ message: null });
+  },
+
+  /** 非阻塞提示(复用 toast 通道,3 秒自动消失)。 */
+  notify(text: string): void {
+    setState({ message: text });
   },
 };
 

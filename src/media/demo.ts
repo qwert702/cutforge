@@ -6,6 +6,7 @@ import { applyCommand } from '../core/reducer.ts';
 import { findFreeStart } from '../core/select.ts';
 import { uid, type MediaAsset, type ProjectDoc } from '../core/types.ts';
 import type { Command } from '../core/commands.ts';
+import { registerMediaBlob } from '../persist/mediaRegistry.ts';
 import { editorStore } from '../ui/hooks/useEditorStore.ts';
 
 interface GeneratedClipSpec {
@@ -96,10 +97,16 @@ async function recordClip(spec: GeneratedClipSpec): Promise<MediaAsset> {
   recorder.start(200);
 
   const startAt = performance.now();
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
+    // 后台标签页的 rAF 会被冻结:超时给出可读错误而不是静默挂死
+    const watchdog = setTimeout(
+      () => reject(new Error('页面处于后台,示例生成被暂停;请保持页面在前台重试')),
+      (spec.seconds + 5) * 1000,
+    );
     const step = () => {
       const elapsed = (performance.now() - startAt) / 1000;
       if (elapsed >= spec.seconds) {
+        clearTimeout(watchdog);
         resolve();
         return;
       }
@@ -114,7 +121,7 @@ async function recordClip(spec: GeneratedClipSpec): Promise<MediaAsset> {
   const blob = new Blob(chunks, { type: 'video/webm' });
   const url = URL.createObjectURL(blob);
   const duration = await probeDuration(url);
-  return {
+  const asset: MediaAsset = {
     id: uid('asset'),
     name: spec.name,
     kind: 'video',
@@ -123,6 +130,8 @@ async function recordClip(spec: GeneratedClipSpec): Promise<MediaAsset> {
     width: DEMO_WIDTH,
     height: DEMO_HEIGHT,
   };
+  registerMediaBlob(asset.id, blob);
+  return asset;
 }
 
 function probeDuration(url: string): Promise<number> {

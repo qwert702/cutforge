@@ -96,8 +96,6 @@ body { background: var(--bg); color: var(--text); }
 .inspector-asset { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-fadetype { flex-direction: row; align-items: center; gap: 10px; }
 .inspector-fadetype label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
-.clip-text { background: rgba(255, 209, 102, 0.16); border-color: #d1a337; }
-.clip-fade-badge { position: absolute; right: 9px; top: 2px; font-size: 9px; opacity: 0.8; }
 .preview-canvas {
   max-width: 100%; max-height: 100%; aspect-ratio: 16 / 9;
   background: #000; border: 1px solid var(--border); border-radius: 4px;
@@ -157,22 +155,31 @@ body { background: var(--bg); color: var(--text); }
 /* ── 片段 ───────────────────────────────── */
 .clip {
   position: absolute; top: 5px; bottom: 5px; border-radius: 4px;
-  background: var(--accent-soft); border: 1px solid var(--accent);
+  background: linear-gradient(180deg, rgba(79, 140, 255, 0.22), rgba(79, 140, 255, 0.1));
+  border: 1px solid var(--accent);
   color: var(--text); font-size: 11px; cursor: grab; overflow: hidden;
   display: flex; align-items: center; padding: 0 10px;
 }
-.clip-audio { background: rgba(61, 153, 112, 0.18); border-color: #3d9970; }
-.clip-image { background: rgba(186, 109, 255, 0.18); border-color: #ba6dff; }
-.clip-selected { outline: 2px solid #fff; outline-offset: -1px; }
-.clip-dragging { opacity: 0.85; cursor: grabbing; z-index: 4; }
-.clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.clip-audio { background: linear-gradient(180deg, rgba(61, 153, 112, 0.28), rgba(61, 153, 112, 0.12)); border-color: #3d9970; }
+.clip-image { background: linear-gradient(180deg, rgba(186, 109, 255, 0.22), rgba(186, 109, 255, 0.1)); border-color: #ba6dff; }
+.clip-text { background: linear-gradient(180deg, rgba(255, 209, 102, 0.2), rgba(255, 209, 102, 0.08)); border-color: #d1a337; }
+.clip-selected { outline: 2px solid #fff; outline-offset: -1px; box-shadow: 0 0 12px rgba(255, 255, 255, 0.25); }
+.clip-dragging { opacity: 0.85; cursor: grabbing; z-index: 4; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+.clip-name {
+  position: relative; z-index: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.clip-thumbs { position: absolute; inset: 0; display: flex; z-index: 0; pointer-events: none; }
+.clip-thumbs img { flex: 1; min-width: 0; height: 100%; object-fit: cover; filter: brightness(0.85); }
+.clip-waveform { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.clip-fade-badge { position: absolute; right: 9px; top: 2px; font-size: 9px; opacity: 0.8; z-index: 2; }
 .clip-handle {
   position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize;
-  background: transparent;
+  background: transparent; z-index: 3;
 }
-.clip-handle:hover { background: rgba(255, 255, 255, 0.35); }
-.clip-handle-left { left: 0; }
-.clip-handle-right { right: 0; }
+.clip-handle:hover { background: rgba(255, 255, 255, 0.4); }
+.clip-handle-left { left: 0; border-radius: 3px 0 0 3px; }
+.clip-handle-right { right: 0; border-radius: 0 3px 3px 0; }
 
 /* ── 聊天面板 ────────────────────────────── */
 .chat-panel {
@@ -235,3 +242,78 @@ body { background: var(--bg); color: var(--text); }
 .export-done { color: #7ddb9a; font-size: 12.5px; }
 .export-error { color: var(--danger); font-size: 12.5px; }
 .export-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── 工程菜单与工程库 ─────────────────────── */
+.toolbar-project-wrap { position: relative; display: flex; align-items: center; gap: 2px; }
+.toolbar-project { background: none; border: none; color: var(--text); font-size: 12.5px; cursor: text; padding: 3px 6px; border-radius: 4px; }
+.toolbar-project:hover { background: var(--bg-hover); }
+.toolbar-project-input {
+  background: var(--bg-hover); color: var(--text); border: 1px solid var(--accent);
+  border-radius: 4px; padding: 2px 6px; font-size: 12.5px; width: 150px;
+}
+.project-menu {
+  position: absolute; top: 100%; left: 0; z-index: 30; min-width: 140px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px; display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.project-menu-item {
+  background: none; border: none; color: var(--text); text-align: left; font-size: 12.5px;
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+}
+.project-menu-item:hover { background: var(--bg-hover); }
+
+.project-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.project-row { display: flex; gap: 6px; align-items: stretch; }
+.project-open {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 8px 10px; cursor: pointer; font-size: 12.5px;
+}
+.project-open:hover:not(:disabled) { border-color: var(--accent); }
+.project-name { font-weight: 600; }
+.project-time { color: var(--text-dim); font-size: 11px; }
+
+/* ── 右键菜单 ────────────────────────────── */
+.context-menu {
+  position: fixed; z-index: 60; min-width: 170px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 7px;
+  padding: 4px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.context-menu-item {
+  background: none; border: none; color: var(--text); text-align: left; font-size: 12.5px;
+  padding: 7px 10px; border-radius: 5px; cursor: pointer;
+}
+.context-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
+.context-menu-item:disabled { opacity: 0.4; cursor: default; }
+.context-menu-danger { color: var(--danger); }
+
+/* ── 轨道管理 ────────────────────────────── */
+.track-header { position: relative; }
+.track-delete {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-dim); font-size: 14px;
+  cursor: pointer; opacity: 0; padding: 2px 6px; border-radius: 4px; line-height: 1;
+}
+.track-header:hover .track-delete { opacity: 1; }
+.track-delete:hover { color: var(--danger); background: var(--bg-hover); }
+.track-rename-input {
+  flex: 1; min-width: 0; background: var(--bg-hover); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 3px; padding: 2px 5px; font-size: 11.5px;
+}
+.track-add-row { display: flex; gap: 4px; padding: 6px 4px; }
+.track-add {
+  flex: 1; background: var(--bg-hover); border: 1px dashed var(--border); border-radius: 4px;
+  color: var(--text-dim); font-size: 11px; padding: 4px 2px; cursor: pointer;
+}
+.track-add:hover { color: var(--text); border-color: var(--accent); }
+
+/* ── 吸附参考线 / 拖放遮罩 ─────────────────── */
+.snap-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffd166; pointer-events: none; z-index: 6; }
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 45; background: rgba(20, 30, 60, 0.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.drop-overlay-card {
+  background: var(--bg-raised); border: 2px dashed var(--accent); border-radius: 12px;
+  padding: 28px 44px; font-size: 15px; color: var(--text);
+}

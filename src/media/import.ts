@@ -2,6 +2,7 @@
 // 视频用 <video>、音频用 <audio>、图片用 <img> 探测元数据。
 
 import { uid, type AssetKind, type MediaAsset } from '../core/types.ts';
+import { registerMediaBlob } from '../persist/mediaRegistry.ts';
 
 function probe(kind: AssetKind, url: string): Promise<{ duration: number | null; width: number | null; height: number | null }> {
   if (kind === 'image') {
@@ -56,7 +57,7 @@ export async function importFiles(files: readonly File[]): Promise<{ assets: Med
     const url = URL.createObjectURL(file);
     try {
       const meta = await probe(kind, url);
-      assets.push({
+      const asset: MediaAsset = {
         id: uid('asset'),
         name: file.name,
         kind,
@@ -64,7 +65,9 @@ export async function importFiles(files: readonly File[]): Promise<{ assets: Med
         durationSeconds: meta.duration,
         width: meta.width,
         height: meta.height,
-      });
+      };
+      registerMediaBlob(asset.id, file); // 原始文件进注册表,供持久化
+      assets.push(asset);
     } catch (error) {
       URL.revokeObjectURL(url);
       errors.push(`${file.name}:${error instanceof Error ? error.message : '探测失败'}`);

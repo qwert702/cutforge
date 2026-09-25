@@ -1,16 +1,20 @@
 // 时间线:标尺 + 轨道行 + 片段块。支持:
 //   - 标尺点击/拖动定位播放头
-//   - 片段拖拽移动(可跨同类型轨道)
+//   - 片段拖拽移动(可跨同类型轨道,自动吸附到 0/播放头/其他片段边缘)
 //   - 片段左右边缘裁剪(trim)
-//   - 点击选中 / Shift 多选
+//   - 点击选中 / Shift 多选 / 右键菜单
+//   - 轨道管理:双击重命名、删除、底部快速新建
 // 拖拽过程中在本地推导预览几何,松手才派发命令(reducer 拒绝则回弹)。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clipById } from '../../core/select.ts';
-import { clipEnd, snapToFrame, type Clip, type ProjectDoc } from '../../core/types.ts';
+import { clipEnd, snapToFrame, uid, type Clip, type ProjectDoc, type TrackKind } from '../../core/types.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
+import { ContextMenu, type MenuItem } from './ContextMenu.tsx';
+import { ClipThumbs, ClipWaveform } from './ClipVisuals.tsx';
 
 const TRACK_HEIGHT = 56;
+const SNAP_PX = 8;
 
 interface DragState {
   kind: 'move' | 'trim-start' | 'trim-end';
@@ -23,12 +27,16 @@ interface DragState {
   /** move 时根据指针悬停的轨道实时更新 */
   hoverTrackId: string | null;
   dt: number;
+  /** 吸附参考线的时间位置(无吸附时为 null) */
+  snapAt: number | null;
 }
 
 export function Timeline() {
   const doc = useProject();
   const { playhead, zoom, selection } = useEditor();
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [renamingTrack, setRenamingTrack] = useState<string | null>(null);
   const rulerInnerRef = useRef<HTMLDivElement>(null);
 
   const duration = Math.max(10, doc.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0) + 10);
@@ -50,13 +58,52 @@ export function Timeline() {
     if (rulerInnerRef.current) rulerInnerRef.current.style.transform = `translateX(${-target.scrollLeft}px)`;
   }, []);
 
+  // 吸附:把移动后的起点/终点贴到候选时间(0、播放头、其他片段边缘)
+  const snapDt = useCallback(
+    (d: DragState, rawDt: number): { dt: number; snapAt: number | null } => {
+      const fps = doc.fps;
+      const threshold = SNAP_PX / zoom;
+      const candidates: number[] = [0, playhead];
+      for (const clip of doc.clips) {
+        if (clip.id === d.clipId) continue;
+        candidates.push(clip.start, clipEnd(clip));
+      }
+      const start = d.origStart + rawDt;
+      const end = start + d.origDuration;
+      let bestDt = rawDt;
+      let bestDist = threshold;
+      let snapAt: number | null = null;
+      for (const candidate of candidates) {
+        const distStart = Math.abs(start - candidate);
+        if (distStart < bestDist) {
+          bestDist = distStart;
+          bestDt = snapToFrame(candidate - d.origStart, fps);
+          snapAt = candidate;
+        }
+        const distEnd = Math.abs(end - candidate);
+        if (distEnd < bestDist) {
+          bestDist = distEnd;
+          bestDt = snapToFrame(candidate - d.origDuration - d.origStart, fps);
+          snapAt = candidate;
+        }
+      }
+      return { dt: bestDt, snapAt };
+    },
+    [doc.clips, doc.fps, playhead, zoom],
+  );
+
   // 拖拽手势:window 级 pointermove/up,松手提交
   useEffect(() => {
     if (!drag) return;
     const onMove = (event: PointerEvent) => {
-      const dt = snapToFrame((event.clientX - drag.originX) / zoom, doc.fps);
+      const rawDt = snapToFrame((event.clientX - drag.originX) / zoom, doc.fps);
       const hoverTrackId = drag.kind === 'move' ? trackIdAtClientY(doc, event.clientY) : null;
-      setDrag({ ...drag, dt, hoverTrackId });
+      if (drag.kind === 'move') {
+        const { dt, snapAt } = snapDt(drag, rawDt);
+        setDrag({ ...drag, dt, hoverTrackId, snapAt });
+      } else {
+        setDrag({ ...drag, dt: rawDt, hoverTrackId, snapAt: null });
+      }
     };
     const onUp = () => {
       commitDrag(doc, drag);
@@ -68,7 +115,7 @@ export function Timeline() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [drag, zoom, doc]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [drag, zoom, doc, snapDt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startDrag = (kind: DragState['kind'], event: React.PointerEvent, clip: Clip) => {
     event.stopPropagation();
@@ -83,6 +130,7 @@ export function Timeline() {
       origTrackId: clip.trackId,
       hoverTrackId: clip.trackId,
       dt: 0,
+      snapAt: null,
     });
   };
 
@@ -90,6 +138,35 @@ export function Timeline() {
     (clientX: number) => editorStore.seek(timeAtClientX(clientX)),
     [timeAtClientX],
   );
+
+  const openClipMenu = (clip: Clip, event: React.MouseEvent) => {
+    event.preventDefault();
+    editorStore.selectOnly(clip.id);
+    const inside = playhead > clip.start && playhead < clipEnd(clip);
+    const items: MenuItem[] = [
+      { label: '复制片段', onSelect: () => editorStore.dispatch({ type: 'clip.duplicate', clipId: clip.id, newClipId: uid('clip') }, '复制片段') },
+      {
+        label: '在播放头处分割',
+        disabled: !inside,
+        onSelect: () => editorStore.dispatch({ type: 'clip.split', clipId: clip.id, at: playhead, newClipId: uid('clip') }, '分割片段'),
+      },
+      { label: '删除', danger: true, onSelect: () => editorStore.dispatch({ type: 'clip.remove', clipId: clip.id }, '删除片段') },
+    ];
+    setMenu({ x: event.clientX, y: event.clientY, items });
+  };
+
+  const addTrack = (kind: TrackKind) => {
+    const count = doc.tracks.filter((t) => t.kind === kind).length;
+    const track = { id: uid('track'), kind, name: `${kind === 'video' ? '视频' : '音频'} ${count + 1}` };
+    editorStore.dispatch({ type: 'track.add', track }, '新建轨道');
+  };
+
+  const removeTrack = (trackId: string) => {
+    const track = doc.tracks.find((t) => t.id === trackId);
+    const clipCount = doc.clips.filter((c) => c.trackId === trackId).length;
+    if (track && clipCount > 0 && !window.confirm(`删除轨道「${track.name}」将同时删除其上 ${clipCount} 个片段,继续?`)) return;
+    editorStore.dispatch({ type: 'track.remove', trackId }, '删除轨道');
+  };
 
   // 片段 → 展示轨道(move 跨轨时实时跟着指针走)
   const viewTrackIdOf = (clip: Clip): string => {
@@ -126,7 +203,40 @@ export function Timeline() {
         {doc.tracks.map((track) => (
           <div key={track.id} className="track-header" style={{ height: TRACK_HEIGHT }}>
             <span className={`track-kind track-kind-${track.kind}`}>{track.kind === 'video' ? '视' : '音'}</span>
-            <span className="track-name" title={track.name}>{track.name}</span>
+            {renamingTrack === track.id ? (
+              <input
+                className="track-rename-input"
+                autoFocus
+                defaultValue={track.name}
+                onBlur={(e) => {
+                  setRenamingTrack(null);
+                  const name = e.target.value.trim();
+                  if (name && name !== track.name) {
+                    editorStore.dispatch({ type: 'track.rename', trackId: track.id, name }, '重命名轨道');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                  if (e.key === 'Escape') setRenamingTrack(null);
+                }}
+              />
+            ) : (
+              <span
+                className="track-name"
+                title={track.name}
+                onDoubleClick={() => setRenamingTrack(track.id)}
+              >
+                {track.name}
+              </span>
+            )}
+            <button
+              type="button"
+              className="track-delete"
+              title={`删除轨道 ${track.name}`}
+              onClick={() => removeTrack(track.id)}
+            >
+              ×
+            </button>
           </div>
         ))}
         {doc.tracks.length === 0 && (
@@ -134,12 +244,13 @@ export function Timeline() {
             先导入素材或新建轨道
           </div>
         )}
+        <div className="track-add-row">
+          <button type="button" className="track-add" onClick={() => addTrack('video')}>＋ 视频轨</button>
+          <button type="button" className="track-add" onClick={() => addTrack('audio')}>＋ 音频轨</button>
+        </div>
       </div>
 
-      <div
-        className="timeline-scroll"
-        onScroll={(e) => syncRuler(e.currentTarget)}
-      >
+      <div className="timeline-scroll" onScroll={(e) => syncRuler(e.currentTarget)}>
         <div className="timeline-lanes" style={{ width: Math.max(duration * zoom, 400) }}>
           {doc.tracks.map((track) => (
             <div
@@ -159,14 +270,19 @@ export function Timeline() {
                     dragging={drag?.clipId === clip.id}
                     zoom={zoom}
                     onDragStart={startDrag}
+                    onContextMenu={openClipMenu}
                   />
                 ))}
             </div>
           ))}
           {doc.tracks.length === 0 && <div className="track-lane track-lane-empty" style={{ height: TRACK_HEIGHT }} />}
+          {drag?.snapAt != null && (
+            <div className="snap-guide" style={{ left: drag.snapAt * zoom }} />
+          )}
           <div className="playhead" style={{ left: playhead * zoom }} />
         </div>
       </div>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
 }
@@ -178,18 +294,29 @@ function ClipBlock(props: {
   dragging: boolean;
   zoom: number;
   onDragStart: (kind: DragState['kind'], event: React.PointerEvent, clip: Clip) => void;
+  onContextMenu: (clip: Clip, event: React.MouseEvent) => void;
 }) {
-  const { doc, clip, selected, dragging, zoom, onDragStart } = props;
+  const { doc, clip, selected, dragging, zoom, onDragStart, onContextMenu } = props;
   const asset = doc.assets.find((a) => a.id === clip.assetId);
   const kindClass = clip.text !== undefined ? 'clip-text' : `clip-${asset?.kind ?? 'video'}`;
   const label = clip.text !== undefined ? `字 ${clip.text.content.split('\n')[0]}` : asset?.name ?? clip.assetId;
+  const speed = clip.speed ?? 1;
+  const showThumbs = asset?.kind === 'video';
+  const showWave = asset?.kind === 'audio';
   return (
     <div
       className={`clip ${selected ? 'clip-selected' : ''} ${dragging ? 'clip-dragging' : ''} ${kindClass}`}
       style={{ left: clip.start * zoom, width: Math.max(8, clip.duration * zoom) }}
       onPointerDown={(e) => onDragStart('move', e, clip)}
+      onContextMenu={(e) => onContextMenu(clip, e)}
       title={`${clip.text !== undefined ? clip.text.content : asset?.name ?? clip.assetId} · ${clip.duration.toFixed(2)}s`}
     >
+      {showThumbs && asset && (
+        <ClipThumbs asset={asset} srcStart={clip.inPoint} srcSpan={clip.duration * speed} />
+      )}
+      {showWave && asset && (
+        <ClipWaveform asset={asset} srcStart={clip.inPoint} srcSpan={clip.duration * speed} />
+      )}
       <span
         className="clip-handle clip-handle-left"
         onPointerDown={(e) => onDragStart('trim-start', e, clip)}
@@ -239,10 +366,7 @@ function compatibleTrack(doc: ProjectDoc, clip: Clip | null, candidateTrackId: s
 }
 
 function commitDrag(doc: ProjectDoc, drag: DragState): void {
-  if (!drag.dt) {
-    // 无位移的点击不算拖拽
-    return;
-  }
+  if (!drag.dt) return; // 无位移的点击不算拖拽
   if (drag.kind === 'move') {
     const clip = clipById(doc, drag.clipId);
     if (!clip) return;
@@ -255,6 +379,7 @@ function commitDrag(doc: ProjectDoc, drag: DragState): void {
     return;
   }
   if (drag.kind === 'trim-start') {
+    // 左边缘最多移到:源内偏移耗尽(inPoint=0)或时间线起点
     const maxLeftShift = Math.min(drag.origInPoint, drag.origStart);
     const clampedDt = Math.max(Math.min(drag.dt, drag.origDuration - 1 / doc.fps), -maxLeftShift);
     editorStore.dispatch(
@@ -271,3 +396,5 @@ function commitDrag(doc: ProjectDoc, drag: DragState): void {
   const duration = Math.max(1 / doc.fps, snapToFrame(drag.origDuration + drag.dt, doc.fps));
   editorStore.dispatch({ type: 'clip.trim', clipId: drag.clipId, duration }, '调整片段');
 }
+
+export type { TrackKind };
