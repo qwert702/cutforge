@@ -2,6 +2,19 @@
 
 本项目的显著变更记录在案。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.7.0] - 2026-09-25
+
+### 新增
+- **💬 本地语音识别字幕**:Whisper(whisper-tiny 量化版)在浏览器内 WASM 推理,音频全程不出本机;
+  支持自动检测/中文/英语,识别结果一键生成独立「字幕」轨(整批一个撤销点)
+- 模型经 hf-mirror 下载一次后浏览器缓存;模型主机可配置(localStorage `cutforge.asr.host`),
+  开发环境内置同源代理(生产部署可在静态服务器加一条反代规则)
+
+### 修复
+- `decodeAudioData` 间歇失败的健壮性:副本传参防 detach + 原生采样率重试 + 手动重采样回退
+
+[0.7.0]: https://github.com/qwert702/cutforge/releases/tag/v0.7.0
+
 ## [0.6.0] - 2026-09-25
 
 ### 新增
