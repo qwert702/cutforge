@@ -1,7 +1,7 @@
 {
   "name": "cutforge",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "CutForge (working title) — an original, open-source, agent-first AI video editor. Community edition.",
   "license": "AGPL-3.0-or-later",
   "author": "CutForge Contributors",

@@ -78,6 +78,20 @@ export function Preview() {
     if (ctx) drawTimelineFrame(ctx, renderDocRef.current, poolRef.current, time);
   }
 
+  function exportCover(canvas: HTMLCanvasElement | null, name: string) {
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${name || 'cutforge'}-cover.png`;
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }, 'image/png');
+  }
+
   return (
     <div className="preview-wrap">
       <canvas ref={canvasRef} width={renderDoc.width} height={renderDoc.height} className="preview-canvas" />
@@ -85,6 +99,14 @@ export function Preview() {
       <div className="preview-meta">
         {doc.width}×{doc.height} · {doc.fps}fps · {editor.playhead.toFixed(2)}s / {projectDuration(doc).toFixed(2)}s
       </div>
+      <button
+        type="button"
+        className="btn btn-small preview-cover"
+        title="把当前画面保存为封面图(PNG)"
+        onClick={() => exportCover(canvasRef.current, doc.name)}
+      >
+        📸 封面
+      </button>
     </div>
   );
 }

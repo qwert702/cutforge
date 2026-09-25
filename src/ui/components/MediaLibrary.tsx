@@ -7,12 +7,16 @@ import { clipEnd, uid, type MediaAsset, type ProjectDoc, type TrackKind } from '
 import { loadDemoProject } from '../../media/demo.ts';
 import { importFiles } from '../../media/import.ts';
 import { editorStore, useProject } from '../hooks/useEditorStore.ts';
+import { TemplatePicker } from './TemplatePicker.tsx';
+import { VoiceoverModal } from './VoiceoverModal.tsx';
 
 export function MediaLibrary() {
   const doc = useProject();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showVoiceover, setShowVoiceover] = useState(false);
 
   const onPick = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -49,12 +53,20 @@ export function MediaLibrary() {
       <button type="button" className="btn btn-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
         {busy ? '导入中…' : '导入本地素材'}
       </button>
+      <button type="button" className="btn" onClick={() => setShowTemplates(true)} title="选一个故事板模板,自动排版成片">
+        ✨ 一键成片
+      </button>
+      <button type="button" className="btn" onClick={() => setShowVoiceover(true)} title="录制麦克风配音并加入音频轨">
+        🎙 录音配音
+      </button>
       <button type="button" className="btn" disabled={busy} onClick={() => void onDemo()} title="在浏览器里现场生成两段示例视频并铺上时间线">
         {busy ? '生成中…' : '🎬 加载示例工程'}
       </button>
       <button type="button" className="btn" onClick={() => addTextToTimeline(doc)} title="在播放头位置添加一个文字标题">
         ＋ 添加文字
       </button>
+      {showTemplates && <TemplatePicker onClose={() => setShowTemplates(false)} />}
+      {showVoiceover && <VoiceoverModal onClose={() => setShowVoiceover(false)} />}
       {errors.length > 0 && (
         <div className="media-errors">
           {errors.map((e) => (
