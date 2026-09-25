@@ -13,6 +13,12 @@ import {
 } from '../core/types.ts';
 import type { Command } from '../core/commands.ts';
 import { editorStore } from '../ui/hooks/useEditorStore.ts';
+import {
+  applyCommandToProposal,
+  beginProposalIfNeeded,
+  getProposal,
+  isProposalMode,
+} from './proposal.ts';
 
 const numberOr = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -57,10 +63,26 @@ interface AgentTool {
   readonly handle: ToolHandler;
 }
 
-/** 把一批命令派发到编辑器;全部合法才生效(整批一个撤销点)。 */
+/** 把一批命令派发:提案模式下进草稿(待批准),否则直接生效(整批一个撤销点)。 */
 function runCommands(commands: readonly Command[], report: (text: string) => void, okText: string): void {
-  const result = editorStore.dispatchAll(commands, `Agent:${okText}`);
+  if (isProposalMode()) {
+    beginProposalIfNeeded(editorStore.get().history.present);
+    let accepted = 0;
+    for (const command of commands) {
+      const result = applyCommandToProposal(command, okText);
+      if (result.ok) accepted += 1;
+      else report(`命令未能加入提案:${result.error}`);
+    }
+    if (accepted > 0) report(`已加入提案(${accepted} 项,预览确认后由用户批准生效)`);
+    return;
+  }
+  const result = editorStore.dispatchAll(commands, `AI:${okText}`);
   report(result.ok ? okText : `被编辑器拒绝:${result.error}`);
+}
+
+/** Agent 当前应读取/操作的文档:提案进行中时为草稿,否则为真实工程。 */
+export function currentAgentDoc(): ProjectDoc {
+  return getProposal()?.draftDoc ?? editorStore.get().history.present;
 }
 
 export const AGENT_TOOLS: readonly AgentTool[] = [

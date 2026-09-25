@@ -1,6 +1,6 @@
 // 预览合成器:canvas 逐帧绘制 + 播放主时钟。绘制逻辑与导出共用 compositor。
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { projectDuration } from '../../core/select.ts';
 import { clipEnd, sourceTimeAt, type ProjectDoc } from '../../core/types.ts';
 import {
@@ -8,28 +8,33 @@ import {
   drawTimelineFrame,
   type MediaPool,
 } from '../../render/compositor.ts';
+import { getProposal, subscribeProposal } from '../../agent/proposal.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 
 export function Preview() {
   const doc = useProject();
   const editor = useEditor();
+  const proposal = useSyncExternalStore(subscribeProposal, getProposal, getProposal);
+  const renderDoc = proposal ? proposal.draftDoc : doc;
+  const renderDocRef = useRef(renderDoc);
+  renderDocRef.current = renderDoc;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const poolRef = useRef<MediaPool>(new Map());
   const drawnAssetsRef = useRef('');
 
   useEffect(() => {
     const pool = poolRef.current;
-    const signature = doc.assets.map((a) => a.id).join(',');
+    const signature = renderDoc.assets.map((a) => a.id).join(',');
     if (signature === drawnAssetsRef.current) return;
     drawnAssetsRef.current = signature;
-    const wanted = new Set(doc.assets.map((a) => a.id));
+    const wanted = new Set(renderDoc.assets.map((a) => a.id));
     for (const [id, el] of pool) {
       if (!wanted.has(id)) {
         el.remove();
         pool.delete(id);
       }
     }
-    for (const asset of doc.assets) {
+    for (const asset of renderDoc.assets) {
       if (asset.kind === 'text' || pool.has(asset.id)) continue;
       const el = document.createElement(asset.kind === 'image' ? 'img' : asset.kind === 'video' ? 'video' : 'audio');
       el.src = asset.url;
@@ -39,7 +44,7 @@ export function Preview() {
       }
       pool.set(asset.id, el);
     }
-  }, [doc.assets]);
+  }, [renderDoc.assets]);
 
   // 播放主时钟:同时驱动画面重绘
   useEffect(() => {
@@ -59,10 +64,10 @@ export function Preview() {
 
   // 播放头/播放状态变化:同步媒体元素(发声/位置)
   useEffect(() => {
-    syncMedia(doc, poolRef.current, editor.playhead, editor.playing);
+    syncMedia(renderDoc, poolRef.current, editor.playhead, editor.playing);
     drawFrameAt(editor.playhead);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor.playhead, editor.playing, doc]);
+  }, [editor.playhead, editor.playing, renderDoc]);
 
   // 卸载时释放素材池
   useEffect(() => () => disposePool(poolRef.current), []);
@@ -70,12 +75,13 @@ export function Preview() {
   function drawFrameAt(time: number) {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (ctx) drawTimelineFrame(ctx, editorStore.get().history.present, poolRef.current, time);
+    if (ctx) drawTimelineFrame(ctx, renderDocRef.current, poolRef.current, time);
   }
 
   return (
     <div className="preview-wrap">
-      <canvas ref={canvasRef} width={doc.width} height={doc.height} className="preview-canvas" />
+      <canvas ref={canvasRef} width={renderDoc.width} height={renderDoc.height} className="preview-canvas" />
+      {proposal && <div className="preview-badge">📋 提案预览 —— 批准后生效</div>}
       <div className="preview-meta">
         {doc.width}×{doc.height} · {doc.fps}fps · {editor.playhead.toFixed(2)}s / {projectDuration(doc).toFixed(2)}s
       </div>

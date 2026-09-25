@@ -2,7 +2,7 @@
 // 循环:用户消息 → 模型 → (工具调用 ⇄ 工具结果)* → 最终回答。
 // 每次派发命令都走编辑器的命令层,可撤销;失败结果会回传给模型自我纠正。
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import {
   chatCompletion,
   loadLlmConfig,
@@ -11,7 +11,16 @@ import {
   type LlmConfig,
   type ToolCall,
 } from '../../agent/llm.ts';
-import { AGENT_TOOL_SCHEMAS, describeProject, executeTool } from '../../agent/tools.ts';
+import { AGENT_TOOL_SCHEMAS, currentAgentDoc, describeProject, executeTool } from '../../agent/tools.ts';
+import {
+  approveProposal,
+  getProposal,
+  isProposalMode,
+  rejectProposal,
+  setProposalMode,
+  subscribeProposal,
+  type Proposal,
+} from '../../agent/proposal.ts';
 import { editorStore, useProject } from '../hooks/useEditorStore.ts';
 
 interface ChatEntry {
@@ -37,6 +46,8 @@ export function ChatPanel() {
   const [busy, setBusy] = useState(false);
   const [config, setConfig] = useState<LlmConfig | null>(loadLlmConfig());
   const [showSettings, setShowSettings] = useState(false);
+  const [proposalMode, setProposalModeState] = useState(() => isProposalMode());
+  const proposal = useSyncExternalStore(subscribeProposal, getProposal, getProposal);
   const listRef = useRef<HTMLDivElement>(null);
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -62,7 +73,7 @@ export function ChatPanel() {
     scrollToEnd();
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: `${SYSTEM_PROMPT}\n\n当前工程状态:\n${describeProject(docRef.current)}` },
+      { role: 'system', content: `${SYSTEM_PROMPT}${proposalMode ? '\n当前为提案模式:你的改动会先进入提案,由用户预览并批准后生效。' : ''}\n\n当前工程状态:\n${describeProject(currentAgentDoc())}` },
       { role: 'user', content: text },
     ];
     try {
@@ -78,8 +89,8 @@ export function ChatPanel() {
           toolCalls: result.toolCalls as readonly ToolCall[],
         });
         for (const call of result.toolCalls) {
-          // 工具直接操作编辑器 store;随后同步最新文档给下一轮
-          const toolResult = executeTool(call.name, call.arguments, editorStore.get().history.present);
+          // 工具作用于当前文档(提案模式下为草稿);随后同步最新状态给下一轮
+          const toolResult = executeTool(call.name, call.arguments, currentAgentDoc());
           messages.push({ role: 'tool', content: toolResult, toolCallId: call.id });
           append({ role: 'assistant', text: `🔧 ${call.name} → ${toolResult}` });
           scrollToEnd();
@@ -87,6 +98,9 @@ export function ChatPanel() {
         if (round === MAX_TOOL_ROUNDS - 1) {
           append({ role: 'error', text: '达到工具调用轮次上限,已停止。' });
         }
+      }
+      if (getProposal() && getProposal()!.entries.length > 0) {
+        append({ role: 'assistant', text: `📋 提案已就绪(共 ${getProposal()!.entries.length} 项变更),请在下方预览并批准。` });
       }
     } catch (error) {
       append({ role: 'error', text: error instanceof Error ? error.message : String(error) });
@@ -100,6 +114,19 @@ export function ChatPanel() {
     <div className="chat-panel">
       <div className="panel-title chat-title">
         AI 剪辑
+        <span className="chat-mode">
+          <input
+            id="proposal-mode"
+            type="checkbox"
+            checked={proposalMode}
+            title="开启后 AI 的改动先进入提案预览,你批准后才真正生效"
+            onChange={(e) => {
+              setProposalMode(e.target.checked);
+              setProposalModeState(e.target.checked);
+            }}
+          />
+          <label htmlFor="proposal-mode">提案模式</label>
+        </span>
         <button type="button" className="btn btn-small" onClick={() => setShowSettings(!showSettings)}>
           设置
         </button>
@@ -143,6 +170,9 @@ export function ChatPanel() {
           <div key={i} className={`chat-entry chat-entry-${entry.role}`}>{entry.text}</div>
         ))}
       </div>
+      {proposal && (proposal.entries.length > 0 || proposal.rejected.length > 0) && (
+        <ProposalCard proposal={proposal} />
+      )}
       <div className="chat-input-row">
         <textarea
           className="chat-input"
@@ -174,8 +204,53 @@ const LLM_PRESETS: readonly { label: string; baseUrl: string; model: string; hin
   { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini' },
 ];
 
-function SettingsForm(props: { initial: LlmConfig | null; onSave: (config: LlmConfig) => void }) {
-  const [baseUrl, setBaseUrl] = useState(props.initial?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4');
+/** 提案卡片:展示待批准的变更清单,批准 = 一次撤销点应用到真实工程。 */
+function ProposalCard(props: { proposal: Proposal }) {
+  const { proposal } = props;
+  const [error, setError] = useState<string | null>(null);
+
+  const approve = () => {
+    // 先尝试派发到真实工程,成功才清空提案;失败保留提案供用户重试/拒绝
+    const commands = proposal.entries.map((entry) => entry.command);
+    const result = editorStore.dispatchAll(commands, '应用 AI 提案');
+    if (result.ok) {
+      approveProposal();
+      editorStore.notify('提案已应用,Ctrl+Z 可撤销');
+    } else {
+      setError(`应用失败:${result.error}(工程可能已被手动修改;可拒绝后重新让 AI 生成)`);
+    }
+  };
+
+  return (
+    <div className="proposal-card">
+      <div className="proposal-head">
+        📋 提案 · {proposal.entries.length} 项变更
+        <span className="proposal-badge">预览中(未生效)</span>
+      </div>
+      <div className="proposal-list">
+        {proposal.entries.map((entry, i) => (
+          <div key={i} className="proposal-entry">{entry.label}</div>
+        ))}
+        {proposal.rejected.map((r, i) => (
+          <div key={`r${i}`} className="proposal-entry proposal-entry-rejected">
+            ✕ {r.label} —— {r.error}
+          </div>
+        ))}
+      </div>
+      {error && <div className="proposal-error">{error}</div>}
+      <div className="proposal-actions">
+        <button type="button" className="btn btn-small btn-primary" onClick={approve}>
+          ✓ 批准应用
+        </button>
+        <button type="button" className="btn btn-small" onClick={() => rejectProposal()}>
+          ✕ 拒绝
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsForm(props: { initial: LlmConfig | null; onSave: (config: LlmConfig) => void }) {  const [baseUrl, setBaseUrl] = useState(props.initial?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4');
   const [apiKey, setApiKey] = useState(props.initial?.apiKey ?? '');
   const [model, setModel] = useState(props.initial?.model ?? 'glm-4-flash');
   return (
