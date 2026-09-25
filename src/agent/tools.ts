@@ -4,7 +4,13 @@
 
 import type { ToolSchema } from './llm.ts';
 import { projectDuration } from '../core/select.ts';
-import { uid, type ProjectDoc, type TrackKind } from '../core/types.ts';
+import {
+  KEYFRAME_RANGES,
+  uid,
+  type KeyframeProp,
+  type ProjectDoc,
+  type TrackKind,
+} from '../core/types.ts';
 import type { Command } from '../core/commands.ts';
 import { editorStore } from '../ui/hooks/useEditorStore.ts';
 
@@ -337,6 +343,37 @@ export const AGENT_TOOLS: readonly AgentTool[] = [
         ...(args.fadeType === 'black' || args.fadeType === 'white' ? { fadeType: args.fadeType } : {}),
       };
       runCommands([command], report, '已设置转场');
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'set_keyframe',
+        description: '为片段设置关键帧动画属性(位置/缩放/不透明度/旋转)。时间用片段内相对秒;同一属性多个关键帧之间线性插值。',
+        parameters: {
+          type: 'object',
+          properties: {
+            clipId: { type: 'string' },
+            prop: { type: 'string', enum: ['x', 'y', 'scale', 'opacity', 'rotation'] },
+            time: { type: 'number', description: '相对片段起点的秒' },
+            value: { type: 'number', description: 'x/y:0-1(画布相对位置);scale:0.1-4;opacity:0-1;rotation:-180~180' },
+          },
+          required: ['clipId', 'prop', 'time', 'value'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      const prop = stringOr(args.prop) as KeyframeProp;
+      if (!(prop in KEYFRAME_RANGES)) {
+        report(`未知属性:${args.prop}`);
+        return;
+      }
+      runCommands(
+        [{ type: 'clip.setKeyframe', clipId: stringOr(args.clipId), prop, time: numberOr(args.time, 0), value: numberOr(args.value, 0) }],
+        report,
+        '已设置关键帧',
+      );
     },
   },
   {

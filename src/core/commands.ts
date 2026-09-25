@@ -2,7 +2,7 @@
 // 命令携带显式 id(而不是在 reducer 内部生成),保证同一命令重放得到
 // 同一结果 —— 这是 Agent 提案/批准模式与撤销栈能共用一套命令的前提。
 
-import type { Clip, MediaAsset, ProjectDoc, TextSpec, Track } from './types.ts';
+import type { Clip, KeyframeProp, MediaAsset, ProjectDoc, TextSpec, Track } from './types.ts';
 
 export type Command =
   | { readonly type: 'project.rename'; readonly name: string }
@@ -23,6 +23,9 @@ export type Command =
   | { readonly type: 'clip.remove'; readonly clipId: string }
   | { readonly type: 'clip.duplicate'; readonly clipId: string; readonly newClipId: string }
   | { readonly type: 'clip.updateText'; readonly clipId: string; readonly text: Partial<TextSpec> }
+  | { readonly type: 'clip.setKeyframe'; readonly clipId: string; readonly prop: KeyframeProp; readonly time: number; readonly value: number }
+  | { readonly type: 'clip.removeKeyframe'; readonly clipId: string; readonly prop: KeyframeProp; readonly time: number }
+  | { readonly type: 'clip.clearKeyframes'; readonly clipId: string; readonly prop?: KeyframeProp }
   | {
       readonly type: 'clip.properties';
       readonly clipId: string;
@@ -52,4 +55,7 @@ export const COMMAND_LABELS: Record<Command['type'], string> = {
   'clip.duplicate': '复制片段',
   'clip.updateText': '编辑文字',
   'clip.properties': '调整片段属性',
+  'clip.setKeyframe': '设置关键帧',
+  'clip.removeKeyframe': '删除关键帧',
+  'clip.clearKeyframes': '清除关键帧',
 };

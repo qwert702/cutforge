@@ -6,7 +6,16 @@ import type { Command } from './commands.ts';
 import { canRedo, canUndo, initHistory, redo, reduceWithHistory, undo } from './history.ts';
 import { applyCommand } from './reducer.ts';
 import { clipsOnTrack, findFreeStart, projectDuration } from './select.ts';
-import { emptyProject, uid, type Clip, type MediaAsset, type ProjectDoc } from './types.ts';
+import {
+  clipTransformAt,
+  emptyProject,
+  evaluateKeyframes,
+  uid,
+  type Clip,
+  type Keyframe,
+  type MediaAsset,
+  type ProjectDoc,
+} from './types.ts';
 
 function makeDoc(): ProjectDoc {
   const asset: MediaAsset = {
@@ -250,6 +259,58 @@ describe('变速', () => {
     doc = expectOk(applyCommand(doc, addClip(clip({ start: 0, duration: 2 }))));
     doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: doc.clips[0].id, speed: 0.5 }));
     assert.equal(doc.clips[0].speed, 0.5);
+  });
+});
+
+describe('关键帧', () => {
+  it('setKeyframe 上插(同时间覆盖),越界时间/取值被拒绝', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 1, duration: 4 }))));
+    const id = doc.clips[0].id;
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'scale', time: 1, value: 1 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'scale', time: 3, value: 2 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'scale', time: 1.01, value: 1.5 })); // 吸附到同一帧,覆盖
+    assert.equal(doc.clips[0].keyframes?.length, 2);
+    expectError(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'scale', time: 5, value: 1 })); // 超出片段
+    expectError(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'opacity', time: 2, value: 3 })); // 超范围
+  });
+
+  it('evaluateKeyframes 线性插值、边界夹取、默认值', () => {
+    const kfs: Keyframe[] = [
+      { prop: 'scale', time: 1, value: 1 },
+      { prop: 'scale', time: 3, value: 3 },
+    ];
+    assert.equal(evaluateKeyframes(undefined, 'scale', 2), 1); // 无关键帧 → 默认
+    assert.equal(evaluateKeyframes(kfs, 'scale', 0), 1); // 前夹取
+    assert.equal(evaluateKeyframes(kfs, 'scale', 2), 2); // 中点插值
+    assert.equal(evaluateKeyframes(kfs, 'scale', 10), 3); // 后夹取
+    assert.equal(evaluateKeyframes(kfs, 'opacity', 2), 1); // 其他属性不受影响
+  });
+
+  it('clipTransformAt 求完整变换;remove/clear 正确清理', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 0, duration: 4 }))));
+    const id = doc.clips[0].id;
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'opacity', time: 0, value: 0 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'opacity', time: 2, value: 1 }));
+    const transform = clipTransformAt(doc.clips[0], 1); // 时间线 1s = 片段内 1s
+    assert.equal(transform.opacity, 0.5);
+    doc = expectOk(applyCommand(doc, { type: 'clip.removeKeyframe', clipId: id, prop: 'opacity', time: 0 }));
+    assert.equal(doc.clips[0].keyframes?.length, 1);
+    doc = expectOk(applyCommand(doc, { type: 'clip.clearKeyframes', clipId: id }));
+    assert.equal(doc.clips[0].keyframes, undefined);
+  });
+
+  it('split 切分关键帧:左留右移', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 0, duration: 6 }))));
+    const id = doc.clips[0].id;
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'scale', time: 1, value: 0.5 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.setKeyframe', clipId: id, prop: 'scale', time: 4, value: 2 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.split', clipId: id, at: 3, newClipId: 'right' }));
+    const [left, right] = clipsOnTrack(doc, 'track_v1');
+    assert.deepEqual(left.keyframes?.map((k) => [k.time, k.value]), [[1, 0.5]]);
+    assert.deepEqual(right.keyframes?.map((k) => [k.time, k.value]), [[1, 2]]); // 4-3=1
   });
 });
 

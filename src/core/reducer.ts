@@ -10,9 +10,12 @@ import type { ApplyResult, Command } from './commands.ts';
 import {
   assetSupportsTrack,
   clipEnd,
+  KEYFRAME_RANGES,
   snapToFrame,
   sourceSpan,
   type Clip,
+  type Keyframe,
+  type KeyframeProp,
   type ProjectDoc,
 } from './types.ts';
 import { assetById, clipById, findFreeStart, hasOverlap, trackById } from './select.ts';
@@ -21,6 +24,19 @@ const EPSILON = 1e-9;
 
 function round(doc: ProjectDoc, seconds: number): number {
   return snapToFrame(seconds, doc.fps);
+}
+
+function upsertKeyframe(existing: readonly Keyframe[], prop: KeyframeProp, time: number, value: number, frameEpsilon: number): Keyframe[] {
+  const others = existing.filter((k) => k.prop !== prop || Math.abs(k.time - time) > frameEpsilon);
+  const next = [...others, { prop, time, value }].toSorted((a, b) => (a.prop === b.prop ? a.time - b.time : a.prop.localeCompare(b.prop)));
+  return next;
+}
+
+function validateKeyframe(clip: Clip, prop: KeyframeProp, time: number, value: number): string | null {
+  if (!(time >= -1e-9 && time <= clip.duration + 1e-9)) return '关键帧时间必须在片段范围内';
+  const [min, max] = KEYFRAME_RANGES[prop];
+  if (!(value >= min && value <= max)) return `属性 ${prop} 的取值范围是 ${min}-${max}`;
+  return null;
 }
 
 function normalizeClip(doc: ProjectDoc, clip: Clip): Clip {
@@ -154,6 +170,22 @@ export function applyCommand(doc: ProjectDoc, command: Command): ApplyResult {
         inPoint: round(doc, clip.inPoint + leftDuration),
       };
       const left: Clip = { ...clip, duration: leftDuration };
+      // 关键帧切分:左段保留 ≤ 切点,右段平移到新片段时间轴
+      if (clip.keyframes && clip.keyframes.length > 0) {
+        const leftKfs = clip.keyframes.filter((k) => k.time <= leftDuration + EPSILON);
+        const rightKfs = clip.keyframes
+          .filter((k) => k.time > leftDuration + EPSILON)
+          .map((k) => ({ ...k, time: round(doc, k.time - leftDuration) }));
+        const appliedLeft: Clip = leftKfs.length > 0 ? { ...left, keyframes: leftKfs } : { ...left, keyframes: undefined };
+        const appliedRight: Clip = rightKfs.length > 0 ? { ...right, keyframes: rightKfs } : { ...right, keyframes: undefined };
+        if (hasOverlap(doc, clip.trackId, appliedRight.start, clipEnd(appliedRight), clip.id)) {
+          return { ok: false, error: '与同轨片段重叠' };
+        }
+        return {
+          ok: true,
+          doc: { ...doc, clips: [...doc.clips.map((c) => (c.id === clip.id ? appliedLeft : c)), appliedRight] },
+        };
+      }
       // 此时文档里 left 尚未收缩,校验右侧需排除原片段自身,
       // 否则右侧必然与"还没变短的 left"误判重叠。
       if (hasOverlap(doc, clip.trackId, right.start, clipEnd(right), clip.id)) {
@@ -163,6 +195,36 @@ export function applyCommand(doc: ProjectDoc, command: Command): ApplyResult {
         ok: true,
         doc: { ...doc, clips: [...doc.clips.map((c) => (c.id === clip.id ? left : c)), right] },
       };
+    }
+
+    case 'clip.setKeyframe': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip) return { ok: false, error: '片段不存在' };
+      const time = round(doc, command.time);
+      const error = validateKeyframe(clip, command.prop, time, command.value);
+      if (error) return { ok: false, error };
+      const frameEpsilon = 1 / doc.fps / 2;
+      const keyframes = upsertKeyframe(clip.keyframes ?? [], command.prop, time, command.value, frameEpsilon);
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? { ...clip, keyframes } : c)) } };
+    }
+
+    case 'clip.removeKeyframe': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip || !clip.keyframes) return { ok: false, error: '片段不存在或没有关键帧' };
+      const frameEpsilon = 1 / doc.fps / 2;
+      const keyframes = clip.keyframes.filter(
+        (k) => !(k.prop === command.prop && Math.abs(k.time - command.time) <= frameEpsilon),
+      );
+      const next: Clip = keyframes.length > 0 ? { ...clip, keyframes } : { ...clip, keyframes: undefined };
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? next : c)) } };
+    }
+
+    case 'clip.clearKeyframes': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip || !clip.keyframes) return { ok: false, error: '片段不存在或没有关键帧' };
+      const keyframes = command.prop ? clip.keyframes.filter((k) => k.prop !== command.prop) : undefined;
+      const next: Clip = { ...clip, keyframes };
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? next : c)) } };
     }
 
     case 'clip.remove': {

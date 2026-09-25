@@ -2,7 +2,7 @@
 // 池中每个素材一个媒体元素;视频轨自下而上叠放,contain 缩放居中;
 // 文字片段直接绘制;片段的淡入淡出作为全画面转场叠加。
 
-import { clipEnd, type MediaAsset, type ProjectDoc } from '../core/types.ts';
+import { clipEnd, clipTransformAt, type MediaAsset, type ProjectDoc, type ClipTransform } from '../core/types.ts';
 
 export type PoolElement = HTMLVideoElement | HTMLAudioElement | HTMLImageElement;
 export type MediaPool = Map<string, PoolElement>;
@@ -102,19 +102,28 @@ export function drawTimelineFrame(
   for (const track of videoTracks) {
     const clip = activeClipOnTrack(doc, track.id, time);
     if (!clip) continue;
+    const transform = clipTransformAt(clip, time);
+    if (transform.opacity <= 0.001) continue;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, transform.opacity);
     if (clip.text !== undefined) {
-      drawTextClip(ctx, clip.text, canvas.width, canvas.height);
+      // 文字片段:位置由文字样式决定,关键帧提供缩放/旋转/透明度
+      drawTextClip(ctx, clip.text, canvas.width, canvas.height, transform);
     } else {
       const el = pool.get(clip.assetId);
-      if (!el) continue;
+      if (!el) {
+        ctx.restore();
+        continue;
+      }
       if (el instanceof HTMLImageElement) {
         if (el.complete && el.naturalWidth > 0) {
-          drawContain(ctx, el, el.naturalWidth, el.naturalHeight, canvas.width, canvas.height);
+          drawMediaAt(ctx, el, el.naturalWidth, el.naturalHeight, canvas.width, canvas.height, transform);
         }
       } else if (el instanceof HTMLVideoElement && el.readyState >= 2 && el.videoWidth > 0) {
-        drawContain(ctx, el, el.videoWidth, el.videoHeight, canvas.width, canvas.height);
+        drawMediaAt(ctx, el, el.videoWidth, el.videoHeight, canvas.width, canvas.height, transform);
       }
     }
+    ctx.restore();
     // 转场叠加:取最上层片段的淡入淡出(取最大不透明度)
     const alpha = fadeAlphaAt(clip, time);
     if (alpha > fadeAlpha) {
@@ -134,23 +143,46 @@ function drawTextClip(
   text: { content: string; size: number; color: string; x?: number; y?: number },
   canvasWidth: number,
   canvasHeight: number,
+  transform: ClipTransform,
 ): void {
   if (!text.content.trim()) return;
   ctx.save();
   ctx.font = `${text.size}px 'Segoe UI', 'Microsoft YaHei', sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const x = (text.x ?? 0.5) * canvasWidth;
-  const y = (text.y ?? 0.5) * canvasHeight;
+  const anchorX = (text.x ?? 0.5) * canvasWidth;
+  const anchorY = (text.y ?? 0.5) * canvasHeight;
+  ctx.translate(anchorX, anchorY);
+  ctx.rotate((transform.rotation * Math.PI) / 180);
+  ctx.scale(transform.scale, transform.scale);
   ctx.shadowColor = 'rgba(0,0,0,0.75)';
   ctx.shadowBlur = text.size / 7;
   ctx.fillStyle = text.color;
   // 支持多行
   const lines = text.content.split('\n');
   const lineHeight = text.size * 1.3;
-  const startY = y - ((lines.length - 1) * lineHeight) / 2;
-  lines.forEach((line, i) => ctx.fillText(line, x, startY + i * lineHeight));
+  const startY = -((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, 0, startY + i * lineHeight));
   ctx.restore();
+}
+
+/** contain 适配 + 关键帧变换(位置/缩放/旋转),以画布中心为默认锚点。 */
+export function drawMediaAt(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  sw: number,
+  sh: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  transform: ClipTransform,
+): void {
+  if (!sw || !sh) return;
+  const scale = Math.min(canvasWidth / sw, canvasHeight / sh) * transform.scale;
+  const w = sw * scale;
+  const h = sh * scale;
+  ctx.translate(transform.x * canvasWidth, transform.y * canvasHeight);
+  ctx.rotate((transform.rotation * Math.PI) / 180);
+  ctx.drawImage(source, -w / 2, -h / 2, w, h);
 }
 
 export function drawContain(
@@ -161,9 +193,7 @@ export function drawContain(
   canvasWidth: number,
   canvasHeight: number,
 ): void {
-  if (!sw || !sh) return;
-  const scale = Math.min(canvasWidth / sw, canvasHeight / sh);
-  const w = sw * scale;
-  const h = sh * scale;
-  ctx.drawImage(source, (canvasWidth - w) / 2, (canvasHeight - h) / 2, w, h);
+  drawMediaAt(ctx, source, sw, sh, canvasWidth, canvasHeight, {
+    x: 0.5, y: 0.5, scale: 1, opacity: 1, rotation: 0,
+  });
 }

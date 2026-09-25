@@ -96,6 +96,10 @@ body { background: var(--bg); color: var(--text); }
 .inspector-asset { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-fadetype { flex-direction: row; align-items: center; gap: 10px; }
 .inspector-fadetype label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.keyframe-row { display: flex; align-items: flex-end; gap: 4px; }
+.keyframe-row .inspector-row { flex: 1; }
+.keyframe-row .btn { flex: none; margin-bottom: 1px; }
+.keyframe-hint { font-size: 11px; color: var(--text-dim); }
 .preview-canvas {
   max-width: 100%; max-height: 100%; aspect-ratio: 16 / 9;
   background: #000; border: 1px solid var(--border); border-radius: 4px;

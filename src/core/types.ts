@@ -33,6 +33,41 @@ export interface TextSpec {
   readonly y?: number;
 }
 
+export type KeyframeProp = 'x' | 'y' | 'scale' | 'opacity' | 'rotation';
+
+/** 关键帧:time 为相对片段起点的秒;value 为属性绝对值 */
+export interface Keyframe {
+  readonly time: number;
+  readonly prop: KeyframeProp;
+  readonly value: number;
+}
+
+/** 属性默认值(无关键帧时恒定) */
+export const KEYFRAME_DEFAULTS: Record<KeyframeProp, number> = {
+  x: 0.5,
+  y: 0.5,
+  scale: 1,
+  opacity: 1,
+  rotation: 0,
+};
+
+export const KEYFRAME_RANGES: Record<KeyframeProp, readonly [number, number]> = {
+  x: [0, 1],
+  y: [0, 1],
+  scale: [0.1, 4],
+  opacity: [0, 1],
+  rotation: [-180, 180],
+};
+
+/** 片段在时刻 t(时间线秒)的合成变换 */
+export interface ClipTransform {
+  readonly x: number;
+  readonly y: number;
+  readonly scale: number;
+  readonly opacity: number;
+  readonly rotation: number;
+}
+
 /** 时间线上的一段素材引用:start 为时间线位置,inPoint 为源内偏移。 */
 export interface Clip {
   readonly id: string;
@@ -53,6 +88,8 @@ export interface Clip {
   readonly fadeType?: 'black' | 'white';
   /** 文字片段内容;存在时 assetId 必须为空串 */
   readonly text?: TextSpec;
+  /** 关键帧动画(按属性分组的绝对值序列) */
+  readonly keyframes?: readonly Keyframe[];
 }
 
 export interface ProjectDoc {
@@ -67,6 +104,40 @@ export interface ProjectDoc {
 }
 
 export const clipEnd = (clip: Clip): number => clip.start + clip.duration;
+
+/** 线性插值求某属性在时刻 t(相对片段起点秒)的值;无关键帧返回默认值。 */
+export function evaluateKeyframes(
+  keyframes: readonly Keyframe[] | undefined,
+  prop: KeyframeProp,
+  relativeTime: number,
+): number {
+  const mine = keyframes?.filter((k) => k.prop === prop).toSorted((a, b) => a.time - b.time) ?? [];
+  if (mine.length === 0) return KEYFRAME_DEFAULTS[prop];
+  if (relativeTime <= mine[0].time) return mine[0].value;
+  const last = mine[mine.length - 1];
+  if (relativeTime >= last.time) return last.value;
+  for (let i = 0; i < mine.length - 1; i += 1) {
+    const left = mine[i];
+    const right = mine[i + 1];
+    if (relativeTime >= left.time && relativeTime <= right.time) {
+      const ratio = (relativeTime - left.time) / (right.time - left.time);
+      return left.value + (right.value - left.value) * ratio;
+    }
+  }
+  return last.value;
+}
+
+/** 求片段在时间线时刻 t 的合成变换。 */
+export function clipTransformAt(clip: Clip, t: number): ClipTransform {
+  const relative = t - clip.start;
+  return {
+    x: evaluateKeyframes(clip.keyframes, 'x', relative),
+    y: evaluateKeyframes(clip.keyframes, 'y', relative),
+    scale: evaluateKeyframes(clip.keyframes, 'scale', relative),
+    opacity: evaluateKeyframes(clip.keyframes, 'opacity', relative),
+    rotation: evaluateKeyframes(clip.keyframes, 'rotation', relative),
+  };
+}
 
 /** 片段在源内消耗的时长(含变速) */
 export const sourceSpan = (clip: Clip): number => clip.duration * (clip.speed ?? 1);
