@@ -2,15 +2,14 @@
 // 循环:用户消息 → 模型 → (工具调用 ⇄ 工具结果)* → 最终回答。
 // 每次派发命令都走编辑器的命令层,可撤销;失败结果会回传给模型自我纠正。
 
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   chatCompletion,
-  loadLlmConfig,
-  saveLlmConfig,
   type ChatMessage,
   type LlmConfig,
   type ToolCall,
 } from '../../agent/llm.ts';
+import { loadActiveLlmConfig, subscribeProviders } from '../../agent/providers.ts';
 import { AGENT_TOOL_SCHEMAS, currentAgentDoc, describeProject, executeTool } from '../../agent/tools.ts';
 import {
   approveProposal,
@@ -39,18 +38,28 @@ const SYSTEM_PROMPT = [
 
 const MAX_TOOL_ROUNDS = 8;
 
-export function ChatPanel() {
+export function ChatPanel(props: { onOpenSettings: () => void }) {
   const doc = useProject();
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [config, setConfig] = useState<LlmConfig | null>(loadLlmConfig());
-  const [showSettings, setShowSettings] = useState(false);
+  const [config, setConfig] = useState<LlmConfig | null>(() => loadActiveLlmConfig());
   const [proposalMode, setProposalModeState] = useState(() => isProposalMode());
   const proposal = useSyncExternalStore(subscribeProposal, getProposal, getProposal);
   const listRef = useRef<HTMLDivElement>(null);
   const docRef = useRef(doc);
   docRef.current = doc;
+
+  // 设置中心里改动服务商后刷新本地缓存(订阅 providers 变化)
+  useEffect(() => {
+    const refresh = () => setConfig(loadActiveLlmConfig());
+    const unsubscribe = subscribeProviders(refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
 
   const append = (entry: ChatEntry) => setEntries((prev) => [...prev, entry]);
 
@@ -61,10 +70,10 @@ export function ChatPanel() {
   const send = async () => {
     const text = input.trim();
     if (!text || busy) return;
-    const llm = loadLlmConfig();
+    const llm = loadActiveLlmConfig();
     if (!llm) {
-      setShowSettings(true);
-      append({ role: 'error', text: '请先在上方设置里填写模型接口与 API Key。' });
+      props.onOpenSettings();
+      append({ role: 'error', text: '请先在设置里添加模型服务并填入 API Key。' });
       return;
     }
     setInput('');
@@ -127,20 +136,10 @@ export function ChatPanel() {
           />
           <label htmlFor="proposal-mode">提案模式</label>
         </span>
-        <button type="button" className="btn btn-small" onClick={() => setShowSettings(!showSettings)}>
+        <button type="button" className="btn btn-small" onClick={props.onOpenSettings}>
           设置
         </button>
       </div>
-      {showSettings && (
-        <SettingsForm
-          initial={config}
-          onSave={(next) => {
-            saveLlmConfig(next);
-            setConfig(next);
-            setShowSettings(false);
-          }}
-        />
-      )}
       <div className="chat-list" ref={listRef}>
         {entries.length === 0 && (
           <div className="chat-hint">
@@ -195,15 +194,6 @@ export function ChatPanel() {
   );
 }
 
-/** 常用服务商预设:点击即填好接口与模型,用户只需填 Key。 */
-const LLM_PRESETS: readonly { label: string; baseUrl: string; model: string; hint?: string }[] = [
-  { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', hint: '有免费额度' },
-  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
-  { label: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  { label: '通义 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
-  { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini' },
-];
-
 /** 提案卡片:展示待批准的变更清单,批准 = 一次撤销点应用到真实工程。 */
 function ProposalCard(props: { proposal: Proposal }) {
   const { proposal } = props;
@@ -250,47 +240,3 @@ function ProposalCard(props: { proposal: Proposal }) {
   );
 }
 
-function SettingsForm(props: { initial: LlmConfig | null; onSave: (config: LlmConfig) => void }) {  const [baseUrl, setBaseUrl] = useState(props.initial?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4');
-  const [apiKey, setApiKey] = useState(props.initial?.apiKey ?? '');
-  const [model, setModel] = useState(props.initial?.model ?? 'glm-4-flash');
-  return (
-    <div className="chat-settings">
-      <div className="chat-settings-presets">
-        {LLM_PRESETS.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            className="btn btn-small"
-            title={preset.hint ?? preset.baseUrl}
-            onClick={() => {
-              setBaseUrl(preset.baseUrl);
-              setModel(preset.model);
-            }}
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-      <label>
-        接口地址 (OpenAI 兼容)
-        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-      </label>
-      <label>
-        API Key
-        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="在服务商控制台创建" />
-      </label>
-      <label>
-        模型
-        <input value={model} onChange={(e) => setModel(e.target.value)} />
-      </label>
-      <div className="chat-settings-hint">Key 只保存在本机浏览器,请求直接发给你选择的服务商,不经过任何第三方。</div>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => baseUrl.trim() && apiKey.trim() && model.trim() && props.onSave({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim() })}
-      >
-        保存并开始使用
-      </button>
-    </div>
-  );
-}

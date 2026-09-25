@@ -35,23 +35,7 @@ interface WireMessage {
   tool_call_id?: string;
 }
 
-const STORAGE_KEY = 'cutforge.llm.config.v1';
-
-export function loadLlmConfig(): LlmConfig | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    if (!parsed.baseUrl || !parsed.apiKey || !parsed.model) return null;
-    return { baseUrl: parsed.baseUrl, apiKey: parsed.apiKey, model: parsed.model };
-  } catch {
-    return null;
-  }
-}
-
-export function saveLlmConfig(config: LlmConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-}
+// ── 当前使用的服务商配置由 src/agent/providers.ts 统一管理 ──────────────────
 
 function toWire(message: ChatMessage): WireMessage {
   switch (message.role) {

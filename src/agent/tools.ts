@@ -402,6 +402,36 @@ export const AGENT_TOOLS: readonly AgentTool[] = [
     schema: {
       type: 'function',
       function: {
+        name: 'set_filter',
+        description: '为片段设置滤镜特效(强度 0-1);preset 传空字符串清除滤镜。可用预设:cinema 电影感、bw 黑白、vintage 复古、warm 暖冬、cool 冷调、cyber 赛博朋克、contrast 高对比、soft 柔和、vivid 鲜艳、faded 褪色、dreamy 梦幻柔焦、noir 暗调。',
+        parameters: {
+          type: 'object',
+          properties: {
+            clipId: { type: 'string' },
+            preset: { type: 'string' },
+            intensity: { type: 'number', description: '可选,默认 1' },
+          },
+          required: ['clipId', 'preset'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      runCommands(
+        [{
+          type: 'clip.setFilter',
+          clipId: stringOr(args.clipId),
+          preset: stringOr(args.preset) || undefined,
+          ...(args.intensity !== undefined ? { intensity: numberOr(args.intensity, 1) } : {}),
+        }],
+        report,
+        '已设置滤镜',
+      );
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
         name: 'seek',
         description: '把预览播放头移动到指定时间。',
         parameters: { type: 'object', properties: { time: { type: 'number' } }, required: ['time'] },

@@ -26,6 +26,7 @@ export type Command =
   | { readonly type: 'clip.setKeyframe'; readonly clipId: string; readonly prop: KeyframeProp; readonly time: number; readonly value: number }
   | { readonly type: 'clip.removeKeyframe'; readonly clipId: string; readonly prop: KeyframeProp; readonly time: number }
   | { readonly type: 'clip.clearKeyframes'; readonly clipId: string; readonly prop?: KeyframeProp }
+  | { readonly type: 'clip.setFilter'; readonly clipId: string; readonly preset?: string; readonly intensity?: number }
   | {
       readonly type: 'clip.properties';
       readonly clipId: string;
@@ -58,4 +59,5 @@ export const COMMAND_LABELS: Record<Command['type'], string> = {
   'clip.setKeyframe': '设置关键帧',
   'clip.removeKeyframe': '删除关键帧',
   'clip.clearKeyframes': '清除关键帧',
+  'clip.setFilter': '设置滤镜',
 };

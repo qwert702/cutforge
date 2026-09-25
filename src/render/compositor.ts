@@ -3,6 +3,7 @@
 // 文字片段直接绘制;片段的淡入淡出作为全画面转场叠加。
 
 import { clipEnd, clipTransformAt, type MediaAsset, type ProjectDoc, type ClipTransform } from '../core/types.ts';
+import { filterCssFor } from './filters.ts';
 
 export type PoolElement = HTMLVideoElement | HTMLAudioElement | HTMLImageElement;
 export type MediaPool = Map<string, PoolElement>;
@@ -106,6 +107,7 @@ export function drawTimelineFrame(
     if (transform.opacity <= 0.001) continue;
     ctx.save();
     ctx.globalAlpha = Math.min(1, transform.opacity);
+    ctx.filter = filterCssFor(clip.filter?.preset, clip.filter?.intensity);
     if (clip.text !== undefined) {
       // 文字片段:位置由文字样式决定,关键帧提供缩放/旋转/透明度
       drawTextClip(ctx, clip.text, canvas.width, canvas.height, transform);

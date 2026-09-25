@@ -227,6 +227,19 @@ export function applyCommand(doc: ProjectDoc, command: Command): ApplyResult {
       return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? next : c)) } };
     }
 
+    case 'clip.setFilter': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip) return { ok: false, error: '片段不存在' };
+      if (command.preset !== undefined && command.preset !== '' && !(command.intensity === undefined ? true : command.intensity >= 0 && command.intensity <= 1)) {
+        return { ok: false, error: '滤镜强度必须在 0-1 之间' };
+      }
+      let filter: Clip['filter'];
+      if (command.preset && command.preset !== '') {
+        filter = { preset: command.preset, intensity: command.intensity ?? 1 };
+      }
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? { ...c, filter } : c)) } };
+    }
+
     case 'clip.remove': {
       if (!clipById(doc, command.clipId)) return { ok: false, error: '片段不存在' };
       return { ok: true, doc: { ...doc, clips: doc.clips.filter((c) => c.id !== command.clipId) } };

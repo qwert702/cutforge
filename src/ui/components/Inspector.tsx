@@ -9,6 +9,7 @@ import {
   KEYFRAME_RANGES,
   type KeyframeProp,
 } from '../../core/types.ts';
+import { FILTER_PRESETS } from '../../render/filters.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 
 type Dispatch = (command: Command, label: string) => void;
@@ -107,7 +108,35 @@ export function Inspector() {
       </div>
 
       {showKeyframes && (
-        <KeyframeSection clip={clip} playhead={playhead} dispatch={dispatch} textMode={isText} />
+        <>
+          <div className="inspector-section">滤镜</div>
+          <div className="inspector-row">
+            <select
+              className="settings-input"
+              value={clip.filter?.preset ?? ''}
+              onChange={(e) => dispatch(
+                { type: 'clip.setFilter', clipId: clip.id, preset: e.target.value || undefined },
+                '设置滤镜',
+              )}
+            >
+              <option value="">无滤镜</option>
+              {FILTER_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
+            </select>
+          </div>
+          {clip.filter?.preset && (
+            <label className="inspector-row">
+              强度 {Math.round((clip.filter.intensity ?? 1) * 100)}%
+              <input type="range" min={0} max={1} step={0.05} value={clip.filter.intensity ?? 1}
+                onChange={(e) => dispatch(
+                  { type: 'clip.setFilter', clipId: clip.id, preset: clip.filter!.preset, intensity: Number(e.target.value) },
+                  '设置滤镜',
+                )} />
+            </label>
+          )}
+          <KeyframeSection clip={clip} playhead={playhead} dispatch={dispatch} textMode={isText} />
+        </>
       )}
     </div>
   );

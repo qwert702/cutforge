@@ -10,7 +10,7 @@ import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 import { ExportDialog } from './ExportDialog.tsx';
 import { OpenProjectDialog } from './OpenProjectDialog.tsx';
 
-export function Toolbar(props: { onShowHelp: () => void }) {
+export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => void }) {
   const doc = useProject();
   const { history, selection, playhead, playing, zoom } = useEditor();
   const selectedId = selection[0];
@@ -145,6 +145,9 @@ export function Toolbar(props: { onShowHelp: () => void }) {
         {playhead.toFixed(2)}s / {projectDuration(doc).toFixed(2)}s
       </span>
       <div className="toolbar-spacer" />
+      <button type="button" className="btn" onClick={props.onOpenSettings} title="设置(模型服务/快捷键)">
+        ⚙
+      </button>
       <button type="button" className="btn btn-primary" onClick={() => setExporting(true)} title="导出视频">
         导出
       </button>

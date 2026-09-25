@@ -90,6 +90,8 @@ export interface Clip {
   readonly text?: TextSpec;
   /** 关键帧动画(按属性分组的绝对值序列) */
   readonly keyframes?: readonly Keyframe[];
+  /** 滤镜:预设 id + 强度 0-1;省略 = 无滤镜 */
+  readonly filter?: { readonly preset: string; readonly intensity: number };
 }
 
 export interface ProjectDoc {

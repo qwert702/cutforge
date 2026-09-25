@@ -7,6 +7,7 @@ import { ChatPanel } from './components/ChatPanel.tsx';
 import { Inspector } from './components/Inspector.tsx';
 import { MediaLibrary } from './components/MediaLibrary.tsx';
 import { Preview } from './components/Preview.tsx';
+import { SettingsCenter } from './components/SettingsCenter.tsx';
 import { Timeline } from './components/Timeline.tsx';
 import { Toolbar } from './components/Toolbar.tsx';
 import { importFiles } from '../media/import.ts';
@@ -16,6 +17,7 @@ export function App() {
   const { message, playing } = useEditor();
   const [dragOver, setDragOver] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingSeen());
+  const [showSettings, setShowSettings] = useState(false);
 
   // 自动保存 + 启动恢复
   useEffect(() => initAutosave(), []);
@@ -103,7 +105,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Toolbar onShowHelp={() => setShowOnboarding(true)} />
+      <Toolbar onShowHelp={() => setShowOnboarding(true)} onOpenSettings={() => setShowSettings(true)} />
       <div className="app-main">
         <MediaLibrary />
         <div className="app-center">
@@ -111,9 +113,10 @@ export function App() {
           <Inspector />
           <Timeline />
         </div>
-        <ChatPanel />
+        <ChatPanel onOpenSettings={() => setShowSettings(true)} />
       </div>
       {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
+      {showSettings && <SettingsCenter onClose={() => setShowSettings(false)} />}
       {message && (
         <div className="toast" role="alert" onClick={() => editorStore.clearMessage()}>
           {message}
