@@ -117,7 +117,18 @@ export function SubtitleModal(props: { onClose: () => void }) {
             {segments.length > 6 && <div className="subtitle-preview-row">…共 {segments.length} 条</div>}
           </div>
         )}
-        {error && <div className="export-error">❌ {error}</div>}
+        {error && (
+          <div className="export-error">
+            ❌ {error}
+            {(error.includes('fetch') || error.includes('proxy') || error.includes('404')) && (
+              <div className="chat-hint-dim">
+                在线版提示:模型代理未配置。自托管部署可在静态服务器把 /hf-proxy/ 反代到
+                https://hf-mirror.com/(参考仓库 deploy/ 目录的 Cloudflare Worker 示例),
+                或在控制台执行 localStorage.setItem('cutforge.asr.host', '你的代理地址/hf-proxy')。
+              </div>
+            )}
+          </div>
+        )}
         <div className="proposal-actions">
           {!segments && !busy && (
             <button type="button" className="btn btn-primary" disabled={!asset} onClick={() => void start()}>
