@@ -7,15 +7,18 @@ import { clipsAtTime, projectDuration } from '../../core/select.ts';
 import { uid } from '../../core/types.ts';
 import { persistNow } from '../../persist/autosave.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
+import { getTheme, subscribeTheme, toggleTheme } from '../theme.ts';
 import { ExportDialog } from './ExportDialog.tsx';
 import { ModalPortal } from './ModalPortal.tsx';
 import { OpenProjectDialog } from './OpenProjectDialog.tsx';
+import { useSyncExternalStore } from 'react';
 
 export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => void }) {
   const doc = useProject();
   const { history, selection, playhead, playing, zoom } = useEditor();
   const selectedId = selection[0];
   const [exporting, setExporting] = useState(false);
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, getTheme);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [openDialogVisible, setOpenDialogVisible] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -146,6 +149,14 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
         {playhead.toFixed(2)}s / {projectDuration(doc).toFixed(2)}s
       </span>
       <div className="toolbar-spacer" />
+      <button
+        type="button"
+        className="btn"
+        onClick={toggleTheme}
+        title={theme === 'light' ? '切换到深色主题' : '切换到亮色主题'}
+      >
+        {theme === 'light' ? '🌙' : '☀️'}
+      </button>
       <button type="button" className="btn" onClick={props.onOpenSettings} title="设置(模型服务/快捷键)">
         ⚙
       </button>

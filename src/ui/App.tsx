@@ -11,6 +11,7 @@ import { SettingsCenter } from './components/SettingsCenter.tsx';
 import { Timeline } from './components/Timeline.tsx';
 import { Toolbar } from './components/Toolbar.tsx';
 import { importFiles } from '../media/import.ts';
+import { initTheme } from '../ui/theme.ts';
 import { isOnboardingSeen, Onboarding } from './components/Onboarding.tsx';
 
 export function App() {
@@ -18,6 +19,9 @@ export function App() {
   const [dragOver, setDragOver] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingSeen());
   const [showSettings, setShowSettings] = useState(false);
+
+  // 主题初始化(亮色默认)
+  useEffect(() => initTheme(), []);
 
   // 自动保存 + 启动恢复
   useEffect(() => initAutosave(), []);
