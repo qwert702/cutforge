@@ -11,6 +11,7 @@ import { TemplatePicker } from './TemplatePicker.tsx';
 import { VoiceoverModal } from './VoiceoverModal.tsx';
 import { BeatSyncModal } from './BeatSyncModal.tsx';
 import { SubtitleModal } from './SubtitleModal.tsx';
+import { ModalPortal } from './ModalPortal.tsx';
 
 export function MediaLibrary() {
   const doc = useProject();
@@ -75,10 +76,10 @@ export function MediaLibrary() {
       <button type="button" className="btn" onClick={() => addTextToTimeline(doc)} title="在播放头位置添加一个文字标题">
         ＋ 添加文字
       </button>
-      {showTemplates && <TemplatePicker onClose={() => setShowTemplates(false)} />}
-      {showVoiceover && <VoiceoverModal onClose={() => setShowVoiceover(false)} />}
-      {showBeatSync && <BeatSyncModal onClose={() => setShowBeatSync(false)} />}
-      {showSubtitles && <SubtitleModal onClose={() => setShowSubtitles(false)} />}
+      {showTemplates && <ModalPortal><TemplatePicker onClose={() => setShowTemplates(false)} /></ModalPortal>}
+      {showVoiceover && <ModalPortal><VoiceoverModal onClose={() => setShowVoiceover(false)} /></ModalPortal>}
+      {showBeatSync && <ModalPortal><BeatSyncModal onClose={() => setShowBeatSync(false)} /></ModalPortal>}
+      {showSubtitles && <ModalPortal><SubtitleModal onClose={() => setShowSubtitles(false)} /></ModalPortal>}
       {errors.length > 0 && (
         <div className="media-errors">
           {errors.map((e) => (

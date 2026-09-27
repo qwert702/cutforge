@@ -8,6 +8,7 @@ import { uid } from '../../core/types.ts';
 import { persistNow } from '../../persist/autosave.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 import { ExportDialog } from './ExportDialog.tsx';
+import { ModalPortal } from './ModalPortal.tsx';
 import { OpenProjectDialog } from './OpenProjectDialog.tsx';
 
 export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => void }) {
@@ -163,8 +164,8 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
       <button type="button" className="btn" onClick={() => editorStore.setZoom(zoom * 1.5)} title="放大">
         ＋
       </button>
-      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
-      {openDialogVisible && <OpenProjectDialog onClose={() => setOpenDialogVisible(false)} />}
+      {exporting && <ModalPortal><ExportDialog onClose={() => setExporting(false)} /></ModalPortal>}
+      {openDialogVisible && <ModalPortal><OpenProjectDialog onClose={() => setOpenDialogVisible(false)} /></ModalPortal>}
     </div>
   );
 }
