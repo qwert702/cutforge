@@ -6,6 +6,8 @@ import { canRedo, canUndo } from '../../core/history.ts';
 import { clipsAtTime, projectDuration } from '../../core/select.ts';
 import { uid } from '../../core/types.ts';
 import { persistNow } from '../../persist/autosave.ts';
+import { allMediaBlobs } from '../../persist/mediaRegistry.ts';
+import { exportProjectFile, importProjectFile, newProjectId, projectFileName } from '../../persist/projectFile.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 import { getTheme, subscribeTheme, toggleTheme } from '../theme.ts';
 import { ExportDialog } from './ExportDialog.tsx';
@@ -23,6 +25,7 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
   const [openDialogVisible, setOpenDialogVisible] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!projectMenuOpen) return;
@@ -60,6 +63,45 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
     const trimmed = name.trim();
     if (trimmed && trimmed !== doc.name) {
       editorStore.dispatch({ type: 'project.rename', name: trimmed }, '重命名工程');
+    }
+  };
+
+  const exportProjectToFile = async () => {
+    setProjectMenuOpen(false);
+    await persistNow(); // 确保工程与注册表最新
+    try {
+      const file = await exportProjectFile(
+        editorStore.get().history.present,
+        allMediaBlobs(),
+      );
+      const url = URL.createObjectURL(file);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = projectFileName(editorStore.get().history.present.name);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      editorStore.notify('工程文件已导出(含素材,可分享或换机续剪)');
+    } catch (error) {
+      editorStore.notify(`导出失败:${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const importProjectFromFile = async (file: File) => {
+    await persistNow(); // 先保存当前工程再切换
+    try {
+      const loaded = await importProjectFile(file);
+      const blobs = loaded.media;
+      const urls = new Map([...blobs.keys()].map((assetId) => [assetId, URL.createObjectURL(blobs.get(assetId)!)]));
+      const restoredDoc = {
+        ...loaded.doc,
+        assets: loaded.doc.assets.map((a) => ({ ...a, url: urls.get(a.id) ?? '' })),
+      };
+      editorStore.loadProjectRecord(newProjectId('proj'), restoredDoc);
+      await persistNow();
+      editorStore.notify(`已导入工程「${restoredDoc.name}」`);
+    } catch (error) {
+      editorStore.notify(`导入失败:${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -115,8 +157,25 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
             <button type="button" className="project-menu-item" onClick={() => setRenaming(true)}>
               重命名
             </button>
+            <button type="button" className="project-menu-item" onClick={() => void exportProjectToFile()}>
+              导出工程文件
+            </button>
+            <button type="button" className="project-menu-item" onClick={() => importInputRef.current?.click()}>
+              导入工程文件
+            </button>
           </div>
         )}
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".cforge"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void importProjectFromFile(file);
+            e.target.value = '';
+          }}
+        />
       </div>
       <div className="toolbar-sep" />
       <button type="button" className="btn" onClick={() => editorStore.undo()} disabled={!canUndo(history)} title="撤销 (Ctrl+Z)">

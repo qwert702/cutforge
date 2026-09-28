@@ -10,6 +10,7 @@ import {
   type KeyframeProp,
 } from '../../core/types.ts';
 import { FILTER_PRESETS } from '../../render/filters.ts';
+import { MOTION_PRESETS } from '../../media/motions.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 
 type Dispatch = (command: Command, label: string) => void;
@@ -109,8 +110,7 @@ export function Inspector() {
 
       {showKeyframes && (
         <>
-          <div className="inspector-section">滤镜</div>
-          <div className="inspector-row">
+          <div className="inspector-section">滤镜</div>          <div className="inspector-row">
             <select
               className="settings-input"
               value={clip.filter?.preset ?? ''}
@@ -169,6 +169,31 @@ function KeyframeSection(props: {
             清空
           </button>
         )}
+      </div>
+      <div className="keyframe-row">
+        <label className="inspector-row">
+          动效预设
+          <select
+            className="settings-input"
+            value=""
+            onChange={(e) => {
+              const preset = MOTION_PRESETS.find((m) => m.id === e.target.value);
+              if (!preset) return;
+              const commands: Command[] = [
+                ...preset.clears.map((prop) => ({ type: 'clip.clearKeyframes', clipId: clip.id, prop }) as Command),
+                ...preset.keyframes(clip.duration).map((kf) => (
+                  { type: 'clip.setKeyframe', clipId: clip.id, prop: kf.prop, time: kf.time, value: kf.value } as Command
+                )),
+              ];
+              editorStore.dispatchAll(commands, `动效:${preset.label}`);
+            }}
+          >
+            <option value="">选择动效…</option>
+            {MOTION_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
       {!within && <div className="keyframe-hint">把播放头移到片段内可打关键帧</div>}
       {props_.map((prop) => {

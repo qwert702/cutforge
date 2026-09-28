@@ -52,8 +52,8 @@ export const KEYFRAME_DEFAULTS: Record<KeyframeProp, number> = {
 };
 
 export const KEYFRAME_RANGES: Record<KeyframeProp, readonly [number, number]> = {
-  x: [0, 1],
-  y: [0, 1],
+  x: [-0.5, 1.5],
+  y: [-0.5, 1.5],
   scale: [0.1, 4],
   opacity: [0, 1],
   rotation: [-180, 180],

@@ -1,9 +1,8 @@
 // 录音配音弹窗:开始/停止,完成后自动入音频轨(播放头处,轨道不存在则创建)。
 import { useEffect, useRef, useState } from 'react';
-import type { Command } from '../../core/commands.ts';
-import { findFreeStart } from '../../core/select.ts';
-import { uid, type MediaAsset, type ProjectDoc, type TrackKind } from '../../core/types.ts';
+import type { MediaAsset } from '../../core/types.ts';
 import { VoiceoverRecorder, voiceoverSupported } from '../../media/voiceover.ts';
+import { placeAudioAtPlayhead } from '../../media/placeAudio.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 
 export function VoiceoverModal(props: { onClose: () => void }) {
@@ -54,7 +53,7 @@ export function VoiceoverModal(props: { onClose: () => void }) {
       const asset: MediaAsset = await recorderRef.current.stop();
       recorderRef.current = null;
       setRecording(false);
-      addToTimeline(doc, asset, playheadRef.current);
+      placeAudioAtPlayhead(doc, asset, playheadRef.current);
       props.onClose();
       editorStore.notify('配音已添加到音频轨');
     } catch (err) {
@@ -83,23 +82,6 @@ export function VoiceoverModal(props: { onClose: () => void }) {
       </div>
     </div>
   );
-}
-
-function addToTimeline(doc: ProjectDoc, asset: MediaAsset, playhead: number): void {
-  const kind: TrackKind = 'audio';
-  const commands: Command[] = [];
-  let track = doc.tracks.find((t) => t.kind === kind);
-  if (!track) {
-    track = { id: uid('track'), kind, name: '配音' };
-    commands.push({ type: 'track.add', track });
-  }
-  const duration = asset.durationSeconds ?? 1;
-  const start = findFreeStart(doc, track.id, duration, Math.max(0, playhead));
-  commands.push({
-    type: 'clip.add',
-    clip: { id: uid('clip'), trackId: track.id, assetId: asset.id, start, duration, inPoint: 0 },
-  });
-  editorStore.dispatchAll(commands, '添加配音');
 }
 
 function formatSeconds(seconds: number): string {

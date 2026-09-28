@@ -221,7 +221,8 @@ export function applyCommand(doc: ProjectDoc, command: Command): ApplyResult {
 
     case 'clip.clearKeyframes': {
       const clip = clipById(doc, command.clipId);
-      if (!clip || !clip.keyframes) return { ok: false, error: '片段不存在或没有关键帧' };
+      if (!clip) return { ok: false, error: '片段不存在' };
+      if (!clip.keyframes) return { ok: true, doc }; // 无关键帧:清除为幂等空操作(批次安全)
       const keyframes = command.prop ? clip.keyframes.filter((k) => k.prop !== command.prop) : undefined;
       const next: Clip = { ...clip, keyframes };
       return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? next : c)) } };

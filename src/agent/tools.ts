@@ -12,6 +12,7 @@ import {
   type TrackKind,
 } from '../core/types.ts';
 import type { Command } from '../core/commands.ts';
+import { motionById } from '../media/motions.ts';
 import { editorStore } from '../ui/hooks/useEditorStore.ts';
 import {
   applyCommandToProposal,
@@ -426,6 +427,42 @@ export const AGENT_TOOLS: readonly AgentTool[] = [
         report,
         '已设置滤镜',
       );
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'apply_motion',
+        description: '给片段应用内置动效预设(自动生成关键帧)。可用:fade 淡入、slide-left 左滑入、slide-right 右滑入、rise 下方升起、pop 弹入、kenburns-in 推近、kenburns-out 拉远、drift 缓慢横移。',
+        parameters: {
+          type: 'object',
+          properties: {
+            clipId: { type: 'string' },
+            motion: { type: 'string', enum: ['fade', 'slide-left', 'slide-right', 'rise', 'pop', 'kenburns-in', 'kenburns-out', 'drift'] },
+          },
+          required: ['clipId', 'motion'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      const preset = motionById(stringOr(args.motion));
+      if (!preset) {
+        report(`未知动效:${args.motion}`);
+        return;
+      }
+      const clip = editorStore.get().history.present.clips.find((c) => c.id === stringOr(args.clipId));
+      if (!clip) {
+        report(`片段不存在:${args.clipId}`);
+        return;
+      }
+      const commands: Command[] = [
+        ...preset.clears.map((prop) => ({ type: 'clip.clearKeyframes', clipId: clip.id, prop }) as Command),
+        ...preset.keyframes(clip.duration).map((kf) => (
+          { type: 'clip.setKeyframe', clipId: clip.id, prop: kf.prop, time: kf.time, value: kf.value } as Command
+        )),
+      ];
+      runCommands(commands, report, `已应用动效「${preset.label}」`);
     },
   },
   {
