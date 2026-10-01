@@ -2,7 +2,8 @@
 // 池中每个素材一个媒体元素;视频轨自下而上叠放,contain 缩放居中;
 // 文字片段直接绘制;片段的淡入淡出作为全画面转场叠加。
 
-import { clipEnd, clipTransformAt, type MediaAsset, type ProjectDoc, type ClipTransform } from '../core/types.ts';
+import { clipEnd, clipTransformAt, type Clip, type ClipTransform, type MediaAsset, type ProjectDoc } from '../core/types.ts';
+import { previousAdjacentClip } from '../core/select.ts';
 import { filterCssFor } from './filters.ts';
 
 export type PoolElement = HTMLVideoElement | HTMLAudioElement | HTMLImageElement;
@@ -108,6 +109,22 @@ export function drawTimelineFrame(
     ctx.save();
     ctx.globalAlpha = Math.min(1, transform.opacity);
     ctx.filter = filterCssFor(clip.filter?.preset, clip.filter?.intensity);
+
+    // 片段间转场:入场片开始后的 duration 秒内,与前一片段末帧定格双层过渡
+    const transition = clip.transitionIn;
+    const prev = transition ? previousAdjacentClip(doc, clip) : null;
+    if (transition && prev && time < clip.start + transition.duration) {
+      const progress = Math.min(1, Math.max(0, (time - clip.start) / transition.duration));
+      drawTransitionPair(ctx, pool, prev, clip, progress, transition.type, canvas.width, canvas.height);
+      ctx.restore();
+      const alpha = fadeAlphaAt(clip, time);
+      if (alpha > fadeAlpha) {
+        fadeAlpha = alpha;
+        fadeColor = clip.fadeType === 'white' ? '255,255,255' : '0,0,0';
+      }
+      continue;
+    }
+
     if (clip.text !== undefined) {
       // 文字片段:位置由文字样式决定,关键帧提供缩放/旋转/透明度
       drawTextClip(ctx, clip.text, canvas.width, canvas.height, transform);
@@ -142,7 +159,7 @@ export function drawTimelineFrame(
 
 function drawTextClip(
   ctx: CanvasRenderingContext2D,
-  text: { content: string; size: number; color: string; x?: number; y?: number },
+  text: { content: string; size: number; color: string; x?: number; y?: number; stroke?: { color: string; width: number } },
   canvasWidth: number,
   canvasHeight: number,
   transform: ClipTransform,
@@ -164,8 +181,85 @@ function drawTextClip(
   const lines = text.content.split('\n');
   const lineHeight = text.size * 1.3;
   const startY = -((lines.length - 1) * lineHeight) / 2;
-  lines.forEach((line, i) => ctx.fillText(line, 0, startY + i * lineHeight));
+  lines.forEach((line, i) => {
+    const y = startY + i * lineHeight;
+    // 花字描边:先描边再填充
+    if (text.stroke && text.stroke.width > 0) {
+      ctx.lineWidth = text.stroke.width;
+      ctx.strokeStyle = text.stroke.color;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(line, 0, y);
+    }
+    ctx.fillText(line, 0, y);
+  });
   ctx.restore();
+}
+
+/** 片段间转场:前片段末帧定格 + 入场片段按类型过渡(双层绘制)。 */
+function drawTransitionPair(
+  ctx: CanvasRenderingContext2D,
+  pool: MediaPool,
+  prev: Clip,
+  incoming: Clip,
+  progress: number,
+  type: 'dissolve' | 'slide-left' | 'slide-right' | 'wipe' | 'zoom',
+  canvasWidth: number,
+  canvasHeight: number,
+): void {
+  const drawClipLayer = (clip: Clip, alpha: number, offsetX: number, zoom: number, clipRect: { w: number } | null): void => {
+    ctx.save();
+    ctx.globalAlpha *= Math.min(1, Math.max(0, alpha));
+    if (clipRect) {
+      ctx.beginPath();
+      ctx.rect(0, 0, canvasWidth * clipRect.w, canvasHeight);
+      ctx.clip();
+    }
+    if (clip.text !== undefined) {
+      drawTextClip(ctx, clip.text, canvasWidth, canvasHeight, clipTransformAt(clip, clip.start + clip.duration - 0.001));
+      ctx.restore();
+      return;
+    }
+    const el = pool.get(clip.assetId);
+    if (!el) {
+      ctx.restore();
+      return;
+    }
+    const transform = clipTransformAt(clip, clip.start + clip.duration - 0.001); // 末帧状态
+    const shift = offsetX * canvasWidth;
+    ctx.translate(shift, 0);
+    if (el instanceof HTMLImageElement) {
+      if (el.complete && el.naturalWidth > 0) {
+        drawMediaAt(ctx, el, el.naturalWidth, el.naturalHeight, canvasWidth, canvasHeight, { ...transform, scale: transform.scale * zoom });
+      }
+    } else if (el instanceof HTMLVideoElement && el.readyState >= 2 && el.videoWidth > 0) {
+      drawMediaAt(ctx, el, el.videoWidth, el.videoHeight, canvasWidth, canvasHeight, { ...transform, scale: transform.scale * zoom });
+    }
+    ctx.restore();
+  };
+
+  // 前片段:末帧定格(其媒体元素在转场窗口内保持最后位置)
+  switch (type) {
+    case 'dissolve':
+      drawClipLayer(prev, 1, 0, 1, null);
+      drawClipLayer(incoming, progress, 0, 1, null);
+      break;
+    case 'slide-left': // 入场片从右向左滑入
+      drawClipLayer(prev, 1, -progress * 0.6, 1, null);
+      drawClipLayer(incoming, 1, (1 - progress) * 1.0, 1, null);
+      break;
+    case 'slide-right':
+      drawClipLayer(prev, 1, progress * 0.6, 1, null);
+      drawClipLayer(incoming, 1, -(1 - progress) * 1.0, 1, null);
+      break;
+    case 'wipe': // 入场片从左向右擦除覆盖
+      drawClipLayer(prev, 1, 0, 1, null);
+      drawClipLayer(incoming, 1, 0, 1, { w: progress });
+      break;
+    case 'zoom': // 前片段放大淡出,入场片浮现
+      drawClipLayer(prev, 1 - progress, 0, 1 + progress * 0.4, null);
+      drawClipLayer(incoming, progress, 0, 1, null);
+      break;
+  }
 }
 
 /** contain 适配 + 关键帧变换(位置/缩放/旋转),以画布中心为默认锚点。 */

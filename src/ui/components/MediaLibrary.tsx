@@ -1,29 +1,17 @@
-// 素材库:本地文件导入 + 素材列表。单击素材把片段放到第一条兼容轨道的空闲位置。
+// 素材库:本地文件导入 + 素材列表(纯素材管理;创作动作统一在工具栏「＋添加」菜单)。
 
 import { useRef, useState } from 'react';
 import type { Command } from '../../core/commands.ts';
 import { findFreeStart } from '../../core/select.ts';
 import { clipEnd, uid, type MediaAsset, type ProjectDoc, type TrackKind } from '../../core/types.ts';
-import { loadDemoProject } from '../../media/demo.ts';
 import { importFiles } from '../../media/import.ts';
 import { editorStore, useProject } from '../hooks/useEditorStore.ts';
-import { TemplatePicker } from './TemplatePicker.tsx';
-import { VoiceoverModal } from './VoiceoverModal.tsx';
-import { BeatSyncModal } from './BeatSyncModal.tsx';
-import { SubtitleModal } from './SubtitleModal.tsx';
-import { TtsModal } from './TtsModal.tsx';
-import { ModalPortal } from './ModalPortal.tsx';
 
 export function MediaLibrary() {
   const doc = useProject();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showVoiceover, setShowVoiceover] = useState(false);
-  const [showBeatSync, setShowBeatSync] = useState(false);
-  const [showSubtitles, setShowSubtitles] = useState(false);
-  const [showTts, setShowTts] = useState(false);
 
   const onPick = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -37,13 +25,6 @@ export function MediaLibrary() {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
     }
-  };
-
-  const onDemo = async () => {
-    setBusy(true);
-    const result = await loadDemoProject();
-    setBusy(false);
-    if (!result.ok && result.error) setErrors([result.error]);
   };
 
   return (
@@ -60,32 +41,9 @@ export function MediaLibrary() {
       <button type="button" className="btn btn-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
         {busy ? '导入中…' : '导入本地素材'}
       </button>
-      <button type="button" className="btn" onClick={() => setShowTts(true)} title="用你配置的 AI 服务商把文字转成语音">
-        🔊 AI 配音
-      </button>
-      <button type="button" className="btn" onClick={() => setShowSubtitles(true)} title="本地语音识别,自动生成字幕轨">
-        💬 字幕识别
-      </button>
-      <button type="button" className="btn" onClick={() => setShowBeatSync(true)} title="分析音乐节拍,自动按拍切分素材">
-        🎵 音乐卡点
-      </button>
-      <button type="button" className="btn" onClick={() => setShowTemplates(true)} title="选一个故事板模板,自动排版成片">
-        ✨ 一键成片
-      </button>
-      <button type="button" className="btn" onClick={() => setShowVoiceover(true)} title="录制麦克风配音并加入音频轨">
-        🎙 录音配音
-      </button>
-      <button type="button" className="btn" disabled={busy} onClick={() => void onDemo()} title="在浏览器里现场生成两段示例视频并铺上时间线">
-        {busy ? '生成中…' : '🎬 加载示例工程'}
-      </button>
       <button type="button" className="btn" onClick={() => addTextToTimeline(doc)} title="在播放头位置添加一个文字标题">
         ＋ 添加文字
       </button>
-      {showTemplates && <ModalPortal><TemplatePicker onClose={() => setShowTemplates(false)} /></ModalPortal>}
-      {showVoiceover && <ModalPortal><VoiceoverModal onClose={() => setShowVoiceover(false)} /></ModalPortal>}
-      {showBeatSync && <ModalPortal><BeatSyncModal onClose={() => setShowBeatSync(false)} /></ModalPortal>}
-      {showSubtitles && <ModalPortal><SubtitleModal onClose={() => setShowSubtitles(false)} /></ModalPortal>}
-      {showTts && <ModalPortal><TtsModal onClose={() => setShowTts(false)} /></ModalPortal>}
       {errors.length > 0 && (
         <div className="media-errors">
           {errors.map((e) => (
@@ -122,8 +80,8 @@ function firstCompatibleTrack(doc: ProjectDoc, kind: MediaAsset['kind']) {
   return doc.tracks.find((t) => t.kind === 'video') ?? null;
 }
 
-/** 在播放头(或时间线末尾)添加一个 3 秒文字片段;视频轨不存在时自动创建。 */
-export function addTextToTimeline(doc: ProjectDoc, content = '点击选中后在此编辑文字'): void {
+/** 把文字片段放到播放头位置(sticker 模式为大号贴纸,不默认文案)。 */
+export function addTextToTimeline(doc: ProjectDoc, content = '点击选中后在此编辑文字', options?: { size?: number; sticker?: boolean }): void {
   const commands: Command[] = [];
   let track = doc.tracks.find((t) => t.kind === 'video');
   if (!track) {
@@ -132,7 +90,7 @@ export function addTextToTimeline(doc: ProjectDoc, content = '点击选中后在
   }
   const { playhead } = editorStore.get();
   const timelineEnd = doc.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
-  const duration = 3;
+  const duration = options?.sticker ? 2 : 3;
   const start = findFreeStart(doc, track.id, duration, Math.min(playhead, timelineEnd) || 0);
   commands.push({
     type: 'clip.add',
@@ -143,10 +101,15 @@ export function addTextToTimeline(doc: ProjectDoc, content = '点击选中后在
       start,
       duration,
       inPoint: 0,
-      text: { content, size: 96, color: '#ffffff' },
+      text: {
+        content,
+        size: options?.size ?? 96,
+        color: '#ffffff',
+        ...(options?.sticker ? { y: 0.5 } : {}),
+      },
     },
   });
-  editorStore.dispatchAll(commands, '添加文字');
+  editorStore.dispatchAll(commands, options?.sticker ? '添加贴纸' : '添加文字');
 }
 
 /** 把素材作为片段放到第一条兼容轨道的空闲位置(轨道不存在时自动创建)。 */

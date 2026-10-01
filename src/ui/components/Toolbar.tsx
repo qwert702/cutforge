@@ -10,10 +10,24 @@ import { allMediaBlobs } from '../../persist/mediaRegistry.ts';
 import { exportProjectFile, importProjectFile, newProjectId, projectFileName } from '../../persist/projectFile.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 import { getTheme, subscribeTheme, toggleTheme } from '../theme.ts';
+import { loadDemoProject } from '../../media/demo.ts';
+import { addTextToTimeline } from './MediaLibrary.tsx';
+import type { Command } from '../../core/commands.ts';
+import { SFX_PRESETS, renderSfxToWav, sfxById } from '../../media/sfx.ts';
+import { registerMediaBlob } from '../../persist/mediaRegistry.ts';
 import { ExportDialog } from './ExportDialog.tsx';
 import { ModalPortal } from './ModalPortal.tsx';
 import { OpenProjectDialog } from './OpenProjectDialog.tsx';
+import { TemplatePicker } from './TemplatePicker.tsx';
+import { VoiceoverModal } from './VoiceoverModal.tsx';
+import { TtsModal } from './TtsModal.tsx';
+import { SubtitleModal } from './SubtitleModal.tsx';
+import { BeatSyncModal } from './BeatSyncModal.tsx';
+import { StickerPicker } from './StickerPicker.tsx';
 import { useSyncExternalStore } from 'react';
+
+type AddAction =
+  | 'text' | 'voiceover' | 'tts' | 'subtitles' | 'beatsync' | 'templates' | 'demo' | 'stickers';
 
 export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => void }) {
   const doc = useProject();
@@ -24,8 +38,70 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [openDialogVisible, setOpenDialogVisible] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<AddAction | null>(null);
+  const [stickerOpen, setStickerOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // 「＋添加」统一创作入口
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [addMenuOpen]);
+
+  const runAddAction = async (action: AddAction) => {
+    setAddMenuOpen(false);
+    if (action === 'text') {
+      addTextToTimeline(editorStore.get().history.present, '双击检查器编辑文字');
+      return;
+    }
+    if (action === 'demo') {
+      const result = await loadDemoProject();
+      if (!result.ok && result.error) editorStore.notify(result.error);
+      return;
+    }
+    if (action === 'stickers') {
+      setStickerOpen(true);
+      return;
+    }
+    setActiveTool(action);
+  };
+
+  const addSfx = async (id: string) => {
+    const preset = sfxById(id);
+    if (!preset) return;
+    const blob = await renderSfxToWav(preset);
+    const url = URL.createObjectURL(blob);
+    const asset = {
+      id: uid('asset'),
+      name: `音效:${preset.label}`,
+      kind: 'audio' as const,
+      url,
+      durationSeconds: preset.durationSeconds,
+      width: null,
+      height: null,
+    };
+    registerMediaBlob(asset.id, blob);
+    const present = editorStore.get().history.present;
+    const commands: Command[] = [{ type: 'asset.add', asset }];
+    let track = present.tracks.find((t) => t.kind === 'audio');
+    if (!track) {
+      track = { id: uid('track'), kind: 'audio', name: '音效' };
+      commands.push({ type: 'track.add', track });
+    }
+    const playhead = editorStore.get().playhead;
+    commands.push({
+      type: 'clip.add',
+      clip: { id: uid('clip'), trackId: track.id, assetId: asset.id, start: Math.max(0, playhead), duration: preset.durationSeconds, inPoint: 0 },
+    });
+    editorStore.dispatchAll(commands, `添加音效:${preset.label}`);
+  };
 
   useEffect(() => {
     if (!projectMenuOpen) return;
@@ -178,6 +254,30 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
         />
       </div>
       <div className="toolbar-sep" />
+      <div className="toolbar-project-wrap" ref={addMenuRef}>
+        <button type="button" className="btn" onClick={() => setAddMenuOpen(!addMenuOpen)} title="添加文字/贴纸/音频/字幕等">
+          ＋ 添加
+        </button>
+        {addMenuOpen && (
+          <div className="project-menu">
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('text')}>✏️ 文字标题</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('stickers')}>😀 贴纸</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('voiceover')}>🎙 录音配音</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('tts')}>🔊 AI 配音</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('subtitles')}>💬 字幕识别</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('beatsync')}>🎵 音乐卡点</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('templates')}>✨ 一键成片</button>
+            <button type="button" className="project-menu-item" onClick={() => void runAddAction('demo')}>🎬 示例工程</button>
+            <div className="project-menu-sep" />
+            {SFX_PRESETS.map((preset) => (
+              <button key={preset.id} type="button" className="project-menu-item" onClick={() => { setAddMenuOpen(false); void addSfx(preset.id); }}>
+                {preset.emoji} 音效:{preset.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="toolbar-sep" />
       <button type="button" className="btn" onClick={() => editorStore.undo()} disabled={!canUndo(history)} title="撤销 (Ctrl+Z)">
         ↶
       </button>
@@ -236,6 +336,22 @@ export function Toolbar(props: { onShowHelp: () => void; onOpenSettings: () => v
       </button>
       {exporting && <ModalPortal><ExportDialog onClose={() => setExporting(false)} /></ModalPortal>}
       {openDialogVisible && <ModalPortal><OpenProjectDialog onClose={() => setOpenDialogVisible(false)} /></ModalPortal>}
+      {activeTool === 'voiceover' && <ModalPortal><VoiceoverModal onClose={() => setActiveTool(null)} /></ModalPortal>}
+      {activeTool === 'tts' && <ModalPortal><TtsModal onClose={() => setActiveTool(null)} /></ModalPortal>}
+      {activeTool === 'subtitles' && <ModalPortal><SubtitleModal onClose={() => setActiveTool(null)} /></ModalPortal>}
+      {activeTool === 'beatsync' && <ModalPortal><BeatSyncModal onClose={() => setActiveTool(null)} /></ModalPortal>}
+      {activeTool === 'templates' && <ModalPortal><TemplatePicker onClose={() => setActiveTool(null)} /></ModalPortal>}
+      {stickerOpen && (
+        <ModalPortal>
+          <StickerPicker
+            onClose={() => setStickerOpen(false)}
+            onPick={(emoji) => {
+              setStickerOpen(false);
+              addTextToTimeline(editorStore.get().history.present, emoji, { size: 220, sticker: true });
+            }}
+          />
+        </ModalPortal>
+      )}
     </div>
   );
 }

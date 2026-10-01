@@ -7,6 +7,7 @@
 // 拖拽过程中在本地推导预览几何,松手才派发命令(reducer 拒绝则回弹)。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Command } from '../../core/commands.ts';
 import { clipById } from '../../core/select.ts';
 import { clipEnd, snapToFrame, uid, type Clip, type ProjectDoc, type TrackKind } from '../../core/types.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
@@ -19,7 +20,7 @@ const TRACK_HEIGHT = 56;
 const SNAP_PX = 8;
 
 interface DragState {
-  kind: 'move' | 'trim-start' | 'trim-end';
+  kind: 'move' | 'trim-start' | 'trim-end' | 'marquee';
   clipId: string;
   originX: number;
   origStart: number;
@@ -40,6 +41,8 @@ export function Timeline() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [renamingTrack, setRenamingTrack] = useState<string | null>(null);
   const [emptyBusy, setEmptyBusy] = useState(false);
+  const [marquee, setMarquee] = useState<{ x1: number; x2: number; trackIndex: number } | null>(null);
+  void marquee; // 渲染矩形暂省略:框选直接改变选区(视觉反馈即选中高亮)
   const rulerInnerRef = useRef<HTMLDivElement>(null);
 
   const duration = Math.max(10, doc.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0) + 10);
@@ -95,9 +98,43 @@ export function Timeline() {
     [doc.clips, doc.fps, playhead, zoom],
   );
 
-  // 拖拽手势:window 级 pointermove/up,松手提交
+  // 拖拽手势:window 级 pointermove/up,松手提交;marquee 为框选特殊分支
   useEffect(() => {
     if (!drag) return;
+    if (drag.kind === 'marquee') {
+      const lanes = document.querySelector('.timeline-lanes');
+      if (!lanes) return;
+      const rect = lanes.getBoundingClientRect();
+      const startTime = (drag.originX - rect.left) / zoom;
+      const onMove = (event: PointerEvent) => {
+        setDrag({ ...drag, dt: (event.clientX - rect.left) / zoom - startTime });
+      };
+      const onUp = (event: PointerEvent) => {
+        const endTime = (event.clientX - rect.left) / zoom;
+        const t1 = Math.min(startTime, endTime);
+        const t2 = Math.max(startTime, endTime);
+        if (t2 - t1 > 0.05) {
+          // 框选:选中与时间区间相交的所有片段(跨轨)
+          const hit = doc.clips.filter((c) => c.start < t2 && clipEnd(c) > t1).map((c) => c.id);
+          if (hit.length > 0) {
+            editorStore.selectOnly(hit[0]);
+            for (const id of hit.slice(1)) editorStore.toggleSelect(id);
+          } else {
+            editorStore.clearSelection();
+          }
+        } else {
+          editorStore.clearSelection();
+        }
+        setMarquee(null);
+        setDrag(null);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      return () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+    }
     const onMove = (event: PointerEvent) => {
       const rawDt = snapToFrame((event.clientX - drag.originX) / zoom, doc.fps);
       const hoverTrackId = drag.kind === 'move' ? trackIdAtClientY(doc, event.clientY) : null;
@@ -123,15 +160,36 @@ export function Timeline() {
   const startDrag = (kind: DragState['kind'], event: React.PointerEvent, clip: Clip) => {
     event.stopPropagation();
     editorStore.selectOnly(clip.id);
+    if (kind === 'move' || kind === 'trim-start' || kind === 'trim-end') {
+      setDrag({
+        kind,
+        clipId: clip.id,
+        originX: event.clientX,
+        origStart: clip.start,
+        origDuration: clip.duration,
+        origInPoint: clip.inPoint,
+        origTrackId: clip.trackId,
+        hoverTrackId: clip.trackId,
+        dt: 0,
+        snapAt: null,
+      });
+    }
+  };
+
+  // 空白轨道按下:可能成为框选(marquee);移动超过阈值即框选,否则视为点击清空
+  const startMarquee = (event: React.PointerEvent) => {
+    const lanes = document.querySelector('.timeline-lanes');
+    if (!lanes) return;
+    const originX = event.clientX;
     setDrag({
-      kind,
-      clipId: clip.id,
-      originX: event.clientX,
-      origStart: clip.start,
-      origDuration: clip.duration,
-      origInPoint: clip.inPoint,
-      origTrackId: clip.trackId,
-      hoverTrackId: clip.trackId,
+      kind: 'marquee',
+      clipId: '',
+      originX,
+      origStart: 0,
+      origDuration: 0,
+      origInPoint: 0,
+      origTrackId: '',
+      hoverTrackId: null,
       dt: 0,
       snapAt: null,
     });
@@ -144,17 +202,42 @@ export function Timeline() {
 
   const openClipMenu = (clip: Clip, event: React.MouseEvent) => {
     event.preventDefault();
-    editorStore.selectOnly(clip.id);
+    // 多选时右键任一选中片段 → 批量菜单;否则单选该片段
+    if (!selection.includes(clip.id)) editorStore.selectOnly(clip.id);
+    const currentSelection = editorStore.get().selection;
+    const multi = currentSelection.length > 1;
     const inside = playhead > clip.start && playhead < clipEnd(clip);
-    const items: MenuItem[] = [
-      { label: '复制片段', onSelect: () => editorStore.dispatch({ type: 'clip.duplicate', clipId: clip.id, newClipId: uid('clip') }, '复制片段') },
-      {
-        label: '在播放头处分割',
-        disabled: !inside,
-        onSelect: () => editorStore.dispatch({ type: 'clip.split', clipId: clip.id, at: playhead, newClipId: uid('clip') }, '分割片段'),
-      },
-      { label: '删除', danger: true, onSelect: () => editorStore.dispatch({ type: 'clip.remove', clipId: clip.id }, '删除片段') },
-    ];
+    const items: MenuItem[] = [];
+    if (multi) {
+      items.push(
+        { label: `批量复制(${currentSelection.length})`, onSelect: () => editorStore.dispatchAll(
+            currentSelection.map((cid) => ({ type: 'clip.duplicate', clipId: cid, newClipId: uid('clip') }) as Command),
+            '批量复制片段',
+          ) },
+        { label: `批量删除(${currentSelection.length})`, danger: true, onSelect: () => editorStore.dispatchAll(
+            currentSelection.map((cid) => ({ type: 'clip.remove', clipId: cid }) as Command),
+            '批量删除片段',
+          ) },
+        { label: '批量清除关键帧', onSelect: () => editorStore.dispatchAll(
+            currentSelection.map((cid) => ({ type: 'clip.clearKeyframes', clipId: cid }) as Command),
+            '清除关键帧',
+          ) },
+        { label: '批量清除转场', onSelect: () => editorStore.dispatchAll(
+            currentSelection.map((cid) => ({ type: 'clip.clearTransition', clipId: cid }) as Command),
+            '清除转场',
+          ) },
+      );
+    } else {
+      items.push(
+        { label: '复制片段', onSelect: () => editorStore.dispatch({ type: 'clip.duplicate', clipId: clip.id, newClipId: uid('clip') }, '复制片段') },
+        {
+          label: '在播放头处分割',
+          disabled: !inside,
+          onSelect: () => editorStore.dispatch({ type: 'clip.split', clipId: clip.id, at: playhead, newClipId: uid('clip') }, '分割片段'),
+        },
+        { label: '删除', danger: true, onSelect: () => editorStore.dispatch({ type: 'clip.remove', clipId: clip.id }, '删除片段') },
+      );
+    }
     setMenu({ x: event.clientX, y: event.clientY, items });
   };
 
@@ -260,7 +343,9 @@ export function Timeline() {
               key={track.id}
               className="track-lane"
               style={{ height: TRACK_HEIGHT }}
-              onPointerDown={() => editorStore.clearSelection()}
+              onPointerDown={(e) => {
+                if (e.button === 0) startMarquee(e);
+              }}
             >
               {doc.clips
                 .filter((clip) => viewTrackIdOf(clip) === track.id)

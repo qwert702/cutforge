@@ -31,6 +31,16 @@ export interface TextSpec {
   /** 0-1 相对画布宽高的锚点位置;省略时水平/垂直居中 */
   readonly x?: number;
   readonly y?: number;
+  /** 描边(花字);width 为 px */
+  readonly stroke?: { readonly color: string; readonly width: number };
+}
+
+export type TransitionType = 'dissolve' | 'slide-left' | 'slide-right' | 'wipe' | 'zoom';
+
+/** 片段入场转场:与前一个相邻片段的末帧定格做过渡 */
+export interface ClipTransition {
+  readonly type: TransitionType;
+  readonly duration: number;
 }
 
 export type KeyframeProp = 'x' | 'y' | 'scale' | 'opacity' | 'rotation';
@@ -92,6 +102,8 @@ export interface Clip {
   readonly keyframes?: readonly Keyframe[];
   /** 滤镜:预设 id + 强度 0-1;省略 = 无滤镜 */
   readonly filter?: { readonly preset: string; readonly intensity: number };
+  /** 入场转场:与同轨前一个相邻片段的过渡;省略 = 无 */
+  readonly transitionIn?: ClipTransition;
 }
 
 export interface ProjectDoc {

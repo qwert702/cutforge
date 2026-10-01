@@ -17,6 +17,7 @@ import {
   type Keyframe,
   type KeyframeProp,
   type ProjectDoc,
+  type TransitionType,
 } from './types.ts';
 import { assetById, clipById, findFreeStart, hasOverlap, trackById } from './select.ts';
 
@@ -74,6 +75,15 @@ function validateClip(doc: ProjectDoc, clip: Clip): string | null {
     return '片段超出了素材源时长';
   }
   if (hasOverlap(doc, clip.trackId, clip.start, clipEnd(clip), clip.id)) return '与同轨片段重叠';
+  return null;
+}
+
+const TRANSITION_TYPES: readonly TransitionType[] = ['dissolve', 'slide-left', 'slide-right', 'wipe', 'zoom'];
+
+function validateTransition(clip: Clip, type: TransitionType, duration: number): string | null {
+  if (!TRANSITION_TYPES.includes(type)) return `未知转场类型:${type}`;
+  const max = Math.min(1.5, clip.duration / 2);
+  if (!(duration > 0 && duration <= max + EPSILON)) return `转场时长必须在 0-${max.toFixed(2)}s 之间`;
   return null;
 }
 
@@ -239,6 +249,24 @@ export function applyCommand(doc: ProjectDoc, command: Command): ApplyResult {
         filter = { preset: command.preset, intensity: command.intensity ?? 1 };
       }
       return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? { ...c, filter } : c)) } };
+    }
+
+    case 'clip.setTransition': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip) return { ok: false, error: '片段不存在' };
+      const duration = round(doc, command.duration);
+      const error = validateTransition(clip, command.transitionType, duration);
+      if (error) return { ok: false, error };
+      return {
+        ok: true,
+        doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? { ...clip, transitionIn: { type: command.transitionType, duration } } : c)) },
+      };
+    }
+
+    case 'clip.clearTransition': {
+      const clip = clipById(doc, command.clipId);
+      if (!clip) return { ok: false, error: '片段不存在' };
+      return { ok: true, doc: { ...doc, clips: doc.clips.map((c) => (c.id === clip.id ? { ...clip, transitionIn: undefined } : c)) } };
     }
 
     case 'clip.remove': {

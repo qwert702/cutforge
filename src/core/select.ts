@@ -62,3 +62,16 @@ export function findFreeStart(
   }
   return candidate;
 }
+
+/** 同轨上前一个与 `clip` 尾部相接的片段(转场用);无则 null。 */
+export function previousAdjacentClip(doc: ProjectDoc, clip: Clip): Clip | null {
+  const epsilon = 1 / doc.fps + 1e-9;
+  let best: Clip | null = null;
+  for (const candidate of doc.clips) {
+    if (candidate.trackId !== clip.trackId || candidate.id === clip.id) continue;
+    const gap = clip.start - clipEnd(candidate);
+    if (gap < -epsilon || gap > epsilon) continue;
+    if (!best || clipEnd(candidate) > clipEnd(best)) best = candidate;
+  }
+  return best;
+}

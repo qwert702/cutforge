@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import type { Command } from './commands.ts';
 import { canRedo, canUndo, initHistory, redo, reduceWithHistory, undo } from './history.ts';
 import { applyCommand } from './reducer.ts';
-import { clipsOnTrack, findFreeStart, projectDuration } from './select.ts';
+import { clipsOnTrack, findFreeStart, previousAdjacentClip, projectDuration } from './select.ts';
 import {
   clipTransformAt,
   emptyProject,
@@ -340,5 +340,30 @@ describe('音量与淡入淡出', () => {
     const id = doc.clips[0].id;
     doc = expectOk(applyCommand(doc, { type: 'clip.properties', clipId: id, fadeIn: 2 }));
     expectError(applyCommand(doc, { type: 'clip.trim', clipId: id, duration: 3 })); // 2 > 3/2
+  });
+});
+
+describe('片段间转场', () => {
+  it('setTransition 校验:类型/时长范围,clearTransition 清除', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 0, duration: 2 }))));
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 2, duration: 4 }))));
+    const second = doc.clips[1].id;
+    doc = expectOk(applyCommand(doc, { type: 'clip.setTransition', clipId: second, transitionType: 'dissolve', duration: 0.8 }));
+    assert.equal(doc.clips[1].transitionIn?.type, 'dissolve');
+    expectError(applyCommand(doc, { type: 'clip.setTransition', clipId: second, transitionType: 'dissolve', duration: 2.5 }));
+    doc = expectOk(applyCommand(doc, { type: 'clip.clearTransition', clipId: second }));
+    assert.equal(doc.clips[1].transitionIn, undefined);
+  });
+
+  it('previousAdjacentClip 找尾部相接的片段', () => {
+    let doc = makeDoc();
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 0, duration: 2 }))));
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 2, duration: 2 }))));
+    doc = expectOk(applyCommand(doc, addClip(clip({ start: 6, duration: 2 }))));
+    const [first, second, third] = doc.clips;
+    assert.equal(previousAdjacentClip(doc, second)?.id, first.id);
+    assert.equal(previousAdjacentClip(doc, third), null);
+    assert.equal(previousAdjacentClip(doc, first), null);
   });
 });

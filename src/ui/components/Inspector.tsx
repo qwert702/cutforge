@@ -11,6 +11,7 @@ import {
 } from '../../core/types.ts';
 import { FILTER_PRESETS } from '../../render/filters.ts';
 import { MOTION_PRESETS } from '../../media/motions.ts';
+import { TEXT_STYLE_PRESETS } from '../../media/textStyles.ts';
 import { editorStore, useEditor, useProject } from '../hooks/useEditorStore.ts';
 
 type Dispatch = (command: Command, label: string) => void;
@@ -62,6 +63,23 @@ export function Inspector() {
             颜色
             <input type="color" value={clip.text.color}
               onChange={(e) => dispatch({ type: 'clip.updateText', clipId: clip.id, text: { color: e.target.value } }, '编辑文字')} />
+          </label>
+          <label className="inspector-row">
+            花字样式
+            <select
+              className="settings-input"
+              value=""
+              onChange={(e) => {
+                const preset = TEXT_STYLE_PRESETS.find((p) => p.id === e.target.value);
+                if (preset && clip.text) dispatch({ type: 'clip.updateText', clipId: clip.id, text: preset.apply(clip.text) }, '编辑文字');
+                e.target.value = '';
+              }}
+            >
+              <option value="">选择花字…</option>
+              {TEXT_STYLE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
+            </select>
           </label>
         </>
       ) : (

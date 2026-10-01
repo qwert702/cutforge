@@ -10,6 +10,7 @@ import {
   type KeyframeProp,
   type ProjectDoc,
   type TrackKind,
+  type TransitionType,
 } from '../core/types.ts';
 import type { Command } from '../core/commands.ts';
 import { motionById } from '../media/motions.ts';
@@ -463,6 +464,38 @@ export const AGENT_TOOLS: readonly AgentTool[] = [
         )),
       ];
       runCommands(commands, report, `已应用动效「${preset.label}」`);
+    },
+  },
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'set_transition',
+        description: '设置片段入场转场(与前一片段末帧的过渡)。时长上限为片段时长一半(最大 1.5s)。preset 传空清除。可用:dissolve 溶解、slide-left 右滑入、slide-right 左滑入、wipe 擦除、zoom 缩放。',
+        parameters: {
+          type: 'object',
+          properties: {
+            clipId: { type: 'string' },
+            transitionType: { type: 'string', enum: ['dissolve', 'slide-left', 'slide-right', 'wipe', 'zoom'] },
+            duration: { type: 'number' },
+            clear: { type: 'boolean', description: 'true 时清除转场' },
+          },
+          required: ['clipId'],
+        },
+      },
+    },
+    handle: (args, { report }) => {
+      const clipId = stringOr(args.clipId);
+      if (args.clear === true) {
+        runCommands([{ type: 'clip.clearTransition', clipId }], report, '已清除转场');
+        return;
+      }
+      const transitionType = stringOr(args.transitionType) as TransitionType;
+      runCommands(
+        [{ type: 'clip.setTransition', clipId, transitionType, duration: numberOr(args.duration, 0.6) }],
+        report,
+        '已设置转场',
+      );
     },
   },
   {
